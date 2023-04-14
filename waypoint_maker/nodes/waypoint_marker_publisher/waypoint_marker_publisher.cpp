@@ -210,6 +210,7 @@ void createLocalWaypointVelocityMarker(std_msgs::ColorRGBA color, int closest_wa
     relative_p.y = -0.65;
     velocity.pose.position = calcAbsoluteCoordinate(relative_p, lane_waypoint.waypoints[i].pose.pose);
     velocity.pose.position.z += 0.2;
+    velocity.pose.position.z += i * 0.1;
 
     // double to string
     std::ostringstream oss;

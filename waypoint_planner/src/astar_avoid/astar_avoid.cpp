@@ -340,20 +340,27 @@ bool AstarAvoid::planAvoidWaypoints(int& end_of_avoid_index)
 void AstarAvoid::mergeAvoidWaypoints(const nav_msgs::Path& path, const int start_index, const int goal_index,
                                      int& end_of_avoid_index)
 {
-  if (start_index == -1 || goal_index == -1)
+  int start_index_tmp = start_index;
+  if (goal_index == -1 || goal_index < start_index)
   {
     return;
+  }
+  else if (start_index == -1)
+  {
+    start_index_tmp = 0;
   }
 
   // add waypoints before start index
   avoid_waypoints_.waypoints.clear();
-  for (int i = 0; i < start_index; ++i)
+  for (int i = 0; i < start_index_tmp; ++i)
   {
+    // ROS_INFO("[avoid_waypoints_(1)]x:%lf, y:%lf, index:%d", base_waypoints_.waypoints.at(i).pose.pose.position.x,
+    //          base_waypoints_.waypoints.at(i).pose.pose.position.y, i);
     avoid_waypoints_.waypoints.push_back(base_waypoints_.waypoints.at(i));
   }
 
   // set waypoints for avoiding
-  double velocity = 0;
+  int direction = 1;
   for (int i = 0; i < path.poses.size(); ++i)
   {
     autoware_msgs::Waypoint wp;
@@ -366,42 +373,33 @@ void AstarAvoid::mergeAvoidWaypoints(const nav_msgs::Path& path, const int start
     {
       tf::Quaternion current_orientation(path.poses.at(i).pose.orientation.x, path.poses.at(i).pose.orientation.y,
                                          path.poses.at(i).pose.orientation.z, path.poses.at(i).pose.orientation.w);
-      tf::Matrix3x3 current_orientation_matrix(current_orientation);
-      double roll, pitch, yaw;
-      current_orientation_matrix.getRPY(roll, pitch, yaw);
-      double current_direction = yaw;
+      double current_direction = tf::getYaw(current_orientation);
       double waypoint_direction = atan2(path.poses.at(i + 1).pose.position.y - path.poses.at(i).pose.position.y,
                                         path.poses.at(i + 1).pose.position.x - path.poses.at(i).pose.position.x);
       if (cos(current_direction) * cos(waypoint_direction) < 0)
       {
-        velocity = -avoid_waypoints_velocity_ / 3.6;
+        direction = -1;
       }
       else
       {
-        velocity = avoid_waypoints_velocity_ / 3.6;
+        direction = 1;
       }
     }
-    wp.twist.twist.linear.x = velocity;  // velocity = const
-    avoid_waypoints_.waypoints.push_back(wp);
-  }
-  for (const auto& pose : path.poses)
-  {
-    autoware_msgs::Waypoint wp;
-    wp.pose.header = base_waypoints_.header;
-    wp.pose.pose = transformPose(pose.pose, getTransform(base_waypoints_.header.frame_id, pose.header.frame_id));
-    wp.pose.pose.position.z = current_pose_global_.pose.position.z;  // height = const
-    wp.twist.twist.linear.x = avoid_waypoints_velocity_ / 3.6;       // velocity = const
+    wp.twist.twist.linear.x = direction * avoid_waypoints_velocity_ / 3.6;  // velocity = const
+    // ROS_INFO("[avoid_waypoints_(2)]x:%lf, y:%lf, index:%d", wp.pose.pose.position.x, wp.pose.pose.position.y, i);
     avoid_waypoints_.waypoints.push_back(wp);
   }
 
   // add waypoints after goal index
   for (int i = goal_index; i < static_cast<int>(base_waypoints_.waypoints.size()); ++i)
   {
+    // ROS_INFO("[avoid_waypoints_(3)]x:%lf, y:%lf, index:%d", base_waypoints_.waypoints.at(i).pose.pose.position.x,
+    //          base_waypoints_.waypoints.at(i).pose.pose.position.y, i);
     avoid_waypoints_.waypoints.push_back(base_waypoints_.waypoints.at(i));
   }
 
   // update index for merged waypoints
-  end_of_avoid_index = start_index + path.poses.size();
+  end_of_avoid_index = start_index_tmp + path.poses.size();
 }
 
 void AstarAvoid::publishWaypoints(const ros::TimerEvent& e)
@@ -435,11 +433,14 @@ void AstarAvoid::publishWaypoints(const ros::TimerEvent& e)
   autoware_msgs::Lane safety_waypoints;
   safety_waypoints.header = current_waypoints_.header;
   safety_waypoints.increment = current_waypoints_.increment;
-
+  ROS_INFO("[AstarAvoid::publishWaypoints] next_index: %d ->  last: %d", next_index,
+           static_cast<int>(current_waypoints_.waypoints.size()));
   for (int i = next_index;
        i < next_index + safety_waypoints_size_ && i < static_cast<int>(current_waypoints_.waypoints.size()); ++i)
   {
     safety_waypoints.waypoints.push_back(current_waypoints_.waypoints[i]);
+    // ROS_INFO("x:%lf, y:%lf, index:%d", current_waypoints_.waypoints[i].pose.pose.position.x,
+    //          current_waypoints_.waypoints[i].pose.pose.position.y, i);
   }
 
   if (!safety_waypoints.waypoints.empty())
@@ -501,7 +502,8 @@ int AstarAvoid::updateClosestWaypoint(const autoware_msgs::Lane& waypoints, cons
   else
   {
     // search within a limited area around previous_index found in the previous loop.
-    const int start_index = std::max(0, previous_index - search_size / 2);
+    // const int start_index = std::max(0, previous_index - search_size / 2);
+    const int start_index = std::max(0, previous_index);
     const int end_index = std::min(start_index + search_size, static_cast<int>(waypoints.waypoints.size()));
 
     // consists of search_size/2 waypoints before and after the vehicle.

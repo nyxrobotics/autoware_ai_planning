@@ -67,8 +67,7 @@ void PurePursuitNode::initForROS()
   if (private_nh_.hasParam("publishes_for_steering_robot"))
   {
     bool publishes_for_steering_robot;
-    private_nh_.param(
-      "publishes_for_steering_robot", publishes_for_steering_robot, false);
+    private_nh_.param("publishes_for_steering_robot", publishes_for_steering_robot, false);
     if (publishes_for_steering_robot)
     {
       output_interface_ = "ctrl_cmd";
@@ -80,12 +79,10 @@ void PurePursuitNode::initForROS()
   }
   else
   {
-    private_nh_.param(
-      "output_interface", output_interface_, std::string("all"));
+    private_nh_.param("output_interface", output_interface_, std::string("all"));
   }
 
-  if (output_interface_ != "twist" && output_interface_ != "ctrl_cmd" &&
-      output_interface_ != "all")
+  if (output_interface_ != "twist" && output_interface_ != "ctrl_cmd" && output_interface_ != "all")
   {
     ROS_ERROR("Control command interface type is not valid");
     ros::shutdown();
@@ -195,6 +192,11 @@ void PurePursuitNode::publishTwistStamped(const bool& can_get_curvature, const d
   ts.header.stamp = ros::Time::now();
   ts.twist.linear.x = can_get_curvature ? computeCommandVelocity() : 0;
   ts.twist.angular.z = can_get_curvature ? kappa * ts.twist.linear.x : 0;
+  if (ts.twist.linear.x < 0)
+  {
+    ts.twist.angular.z *= -1.0;
+  }
+  // ROS_WARN("[pure_pursuit] ts.twist.linear.x = %lf, ts.twist.angular.z = %lf", ts.twist.linear.x, ts.twist.angular.z);
   pub1_.publish(ts);
 }
 
@@ -219,7 +221,8 @@ double PurePursuitNode::computeLookaheadDistance() const
   const double ld = current_linear_velocity_ * lookahead_distance_ratio_;
 
   return ld < minimum_lookahead_distance_ ? minimum_lookahead_distance_ :
-                                            ld > maximum_lookahead_distance ? maximum_lookahead_distance : ld;
+         ld > maximum_lookahead_distance  ? maximum_lookahead_distance :
+                                            ld;
 }
 
 int PurePursuitNode::getLaneSgn() const
@@ -247,16 +250,12 @@ int PurePursuitNode::getWaypointSgn() const
     const geometry_msgs::Pose next_target_pose = pp_.getCurrentWaypoints().at(2).pose.pose;
     tf::Quaternion current_orientation(current_pose.orientation.x, current_pose.orientation.y,
                                        current_pose.orientation.z, current_pose.orientation.w);
-    tf::Matrix3x3 current_orientation_matrix(current_orientation);
-    double roll, pitch, yaw;
-    current_orientation_matrix.getRPY(roll, pitch, yaw);
-    double current_direction = yaw;
+    double current_direction = tf::getYaw(current_orientation);
     double waypoint_direction = atan2(next_target_pose.position.y - target_pose.position.y,
                                       next_target_pose.position.x - target_pose.position.x);
-
     if (cos(current_direction) * cos(waypoint_direction) < 0)
     {
-      ROS_WARN("[PurePursuitNode] Backward movement detected");
+      // ROS_WARN("[PurePursuitNode] Backward movement detected");
       direction = -1;
     }
   }
@@ -267,10 +266,10 @@ double PurePursuitNode::computeCommandVelocity() const
 {
   if (velocity_source_ == enumToInteger(Mode::dialog))
   {
-    return kmph2mps(const_velocity_) * getLaneSgn() * getWaypointSgn();
+    return kmph2mps(const_velocity_) * getWaypointSgn();
   }
 
-  return command_linear_velocity_ * getWaypointSgn();
+  return fabs(command_linear_velocity_) * getWaypointSgn();
 }
 
 // Assume constant acceleration motion, v_f^2 - v_i^2 = 2 * a * delta_d
