@@ -365,6 +365,37 @@ void AstarAvoid::mergeAvoidWaypoints(const nav_msgs::Path& path, const int start
   }
 
   // set waypoints for avoiding
+  double velocity = 0;
+  for (int i = 0; i < path.poses.size(); ++i)
+  {
+    autoware_msgs::Waypoint wp;
+    wp.pose.header = base_waypoints_.header;
+    wp.pose.pose = transformPose(path.poses.at(i).pose,
+                                 getTransform(base_waypoints_.header.frame_id, path.poses.at(i).header.frame_id));
+    wp.pose.pose.position.z = current_pose_global_.pose.position.z;  // height = const
+    // Check direction
+    if (i < path.poses.size() - 1)
+    {
+      tf::Quaternion current_orientation(path.poses.at(i).pose.orientation.x, path.poses.at(i).pose.orientation.y,
+                                         path.poses.at(i).pose.orientation.z, path.poses.at(i).pose.orientation.w);
+      tf::Matrix3x3 current_orientation_matrix(current_orientation);
+      double roll, pitch, yaw;
+      current_orientation_matrix.getRPY(roll, pitch, yaw);
+      double current_direction = yaw;
+      double waypoint_direction = atan2(path.poses.at(i + 1).pose.position.y - path.poses.at(i).pose.position.y,
+                                        path.poses.at(i + 1).pose.position.x - path.poses.at(i).pose.position.x);
+      if (cos(current_direction) * cos(waypoint_direction) < 0)
+      {
+        velocity = -avoid_waypoints_velocity_ / 3.6;
+      }
+      else
+      {
+        velocity = avoid_waypoints_velocity_ / 3.6;
+      }
+    }
+    wp.twist.twist.linear.x = velocity;  // velocity = const
+    avoid_waypoints_.waypoints.push_back(wp);
+  }
   for (const auto& pose : path.poses)
   {
     autoware_msgs::Waypoint wp;
