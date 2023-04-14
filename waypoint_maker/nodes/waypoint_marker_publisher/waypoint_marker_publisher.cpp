@@ -427,6 +427,7 @@ void createLocalPathMarker(std_msgs::ColorRGBA color, const autoware_msgs::Lane&
   {
     geometry_msgs::Point point;
     point = lane_waypoint.waypoints[i].pose.pose.position;
+    point.z = i * 0.1;
     lane_waypoint_marker.points.push_back(point);
   }
   g_local_waypoints_marker_array.markers.push_back(lane_waypoint_marker);
@@ -452,6 +453,7 @@ void createLocalPointMarker(const autoware_msgs::Lane& lane_waypoint)
   {
     geometry_msgs::Point point;
     point = lane_waypoint.waypoints[i].pose.pose.position;
+    point.z = i * 0.1;
     lane_waypoint_marker.points.push_back(point);
   }
   g_local_waypoints_marker_array.markers.push_back(lane_waypoint_marker);
