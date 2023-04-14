@@ -378,6 +378,9 @@ bool AstarSearch::search()
       // Increase reverse cost
       if (state.back != current_an->back)
         move_cost *= reverse_weight_;
+      // Increase curve cost
+      double curve_cost = fabs(state.rotation) * (curve_weight_ - 1.0);
+      move_cost += curve_cost;
 
       // Calculate index of the next state
       SimpleNode next_sn;
