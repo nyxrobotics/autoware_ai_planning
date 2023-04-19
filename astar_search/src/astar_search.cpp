@@ -43,6 +43,8 @@ AstarSearch::AstarSearch()
   private_nh_.param<double>("path_length_limit", path_length_limit_, 20.0);
   private_nh_.param<bool>("enable_path_angle_limit", enable_path_angle_limit_, false);
   private_nh_.param<double>("path_angle_limit", path_angle_limit_, 3.0 * M_PI);
+  private_nh_.param<bool>("prohibit_turning", prohibit_turning_, false);
+  private_nh_.param<double>("turning_angle_limit", turning_angle_limit_, 2.0 * M_PI);
 
   // costmap configs
   private_nh_.param<int>("obstacle_threshold", obstacle_threshold_, 100);
@@ -376,7 +378,7 @@ bool AstarSearch::search()
       // Next state
       double next_x = current_an->x + state.shift_x;
       double next_y = current_an->y + state.shift_y;
-      double next_theta = modifyTheta(current_an->theta + state.rotation);
+      double next_theta = current_an->theta + state.rotation;
       double move_cost = state.step;
       double move_distance = current_an->move_distance + state.step;
       double move_angle = current_an->move_angle + fabs(state.rotation);
@@ -426,7 +428,8 @@ bool AstarSearch::search()
 
       // Ignore invalit nodes
       if ((enable_path_angle_limit_ && move_angle > path_angle_limit_) ||
-          (enable_path_length_limit_ && move_distance > path_length_limit_))
+          (enable_path_length_limit_ && move_distance > path_length_limit_) ||
+          (prohibit_turning_ && fabs(next_theta) > turning_angle_limit_))
       {
         continue;
       }
