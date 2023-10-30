@@ -16,9 +16,7 @@
 
 #include "waypoint_planner/astar_avoid/astar_avoid.h"
 
-AstarAvoid::AstarAvoid()
-  : nh_()
-  , private_nh_("~")
+AstarAvoid::AstarAvoid() : nh_(), private_nh_("~")
 {
   private_nh_.param<int>("safety_waypoints_size", safety_waypoints_size_, 100);
   private_nh_.param<double>("update_rate", update_rate_, 10.0);
@@ -265,7 +263,8 @@ bool AstarAvoid::planAvoidWaypoints(int& end_of_avoid_index)
   }
 
   auto it =
-      base_waypoint_index_ + obstacle_waypoint_index_ + stopline_ahead_num_ + 1 > base_waypoints_.waypoints.size() ?
+      base_waypoint_index_ + obstacle_waypoint_index_ + stopline_ahead_num_ + 1 >
+              static_cast<int>(base_waypoints_.waypoints.size()) ?
           base_waypoints_.waypoints.end() :
           base_waypoints_.waypoints.begin() + base_waypoint_index_ + obstacle_waypoint_index_ + stopline_ahead_num_ + 1;
   if (std::find_if(base_waypoints_.waypoints.begin() + base_waypoint_index_, it, [](const autoware_msgs::Waypoint& wp) {
@@ -275,6 +274,9 @@ bool AstarAvoid::planAvoidWaypoints(int& end_of_avoid_index)
     return false;
   }
   // update goal pose incrementally and execute A* search
+  std::vector<geometry_msgs::Pose> goal_poses;
+  std::vector<int> goal_indices;
+
   for (int i = search_waypoints_delta_; i < static_cast<int>(search_waypoints_size_); i += search_waypoints_delta_)
   {
     // update goal index
@@ -286,8 +288,7 @@ bool AstarAvoid::planAvoidWaypoints(int& end_of_avoid_index)
     {
       break;
     }
-
-    auto it2 = goal_waypoint_index + stopline_ahead_num_ + 1 > base_waypoints_.waypoints.size() ?
+    auto it2 = goal_waypoint_index + stopline_ahead_num_ + 1 > static_cast<int>(base_waypoints_.waypoints.size()) ?
                    base_waypoints_.waypoints.end() :
                    base_waypoints_.waypoints.begin() + goal_waypoint_index + stopline_ahead_num_ + 1;
     auto result = std::find_if(base_waypoints_.waypoints.begin() + goal_waypoint_index - search_waypoints_delta_, it2,
@@ -298,41 +299,49 @@ bool AstarAvoid::planAvoidWaypoints(int& end_of_avoid_index)
     {
       break;
     }
-
     // update goal pose
     goal_pose_global_ = base_waypoints_.waypoints[goal_waypoint_index].pose;
     goal_pose_local_.header = costmap_.header;
     goal_pose_local_.pose = transformPose(goal_pose_global_.pose,
                                           getTransform(costmap_.header.frame_id, goal_pose_global_.header.frame_id));
-
-    // initialize costmap for A* search
-    astar_.initialize(costmap_);
-
-    // execute astar search
-    found_path = astar_.makePlan(current_pose_local_.pose, goal_pose_local_.pose);
-
-    static ros::Publisher pub = nh_.advertise<nav_msgs::Path>("debug", 1, true);
-
-    if (found_path)
-    {
-      pub.publish(astar_.getPath());
-      avoid_start_index_ = base_waypoint_index_;
-      mergeAvoidWaypoints(astar_.getPath(), avoid_start_index_, goal_waypoint_index, end_of_avoid_index);
-      if (avoid_waypoints_.waypoints.size() > 0)
-      {
-        base_finish_index_ = goal_waypoint_index;
-        avoid_waypoint_index_ = avoid_start_index_;
-        ROS_INFO("Found GOAL at goal_waypoint_index = %d", goal_waypoint_index);
-        astar_.reset();
-        return true;
-      }
-      else
-      {
-        found_path = false;
-      }
-    }
-    astar_.reset();
+    goal_poses.push_back(goal_pose_local_.pose);
+    goal_indices.push_back(goal_waypoint_index);
   }
+
+  if (goal_poses.size() == 0)
+  {
+    ROS_ERROR("Can't find goal...");
+    return false;
+  }
+  // initialize costmap for A* search
+  astar_.initialize(costmap_);
+
+  // execute astar search
+  found_path = astar_.makePlan(current_pose_local_.pose, goal_poses);
+
+  static ros::Publisher pub = nh_.advertise<nav_msgs::Path>("debug", 1, true);
+
+  if (found_path)
+  {
+    pub.publish(astar_.getPath());
+    // Get reached goal index
+    avoid_start_index_ = base_waypoint_index_;
+    int goal_waypoint_index = goal_indices.at(astar_.getGoalIndex());
+    mergeAvoidWaypoints(astar_.getPath(), avoid_start_index_, goal_waypoint_index, end_of_avoid_index);
+    if (avoid_waypoints_.waypoints.size() > 0)
+    {
+      base_finish_index_ = goal_waypoint_index;
+      avoid_waypoint_index_ = avoid_start_index_;
+      ROS_INFO("Found GOAL at goal_waypoint_index = %d", goal_waypoint_index);
+      astar_.reset();
+      return true;
+    }
+    else
+    {
+      found_path = false;
+    }
+  }
+  astar_.reset();
 
   ROS_ERROR("Can't find goal...");
   return false;
