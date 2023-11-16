@@ -43,6 +43,7 @@ std_msgs::ColorRGBA _initial_color;
 std_msgs::ColorRGBA _global_color;
 std_msgs::ColorRGBA g_local_color;
 const double g_global_alpha = 0.2;
+const double g_global_resolution = 0.6;
 const double g_local_alpha = 1.0;
 int _closest_waypoint = -1;
 
@@ -105,10 +106,15 @@ void createGlobalLaneArrayVelocityMarker(const autoware_msgs::LaneArray& lane_wa
   velocity_marker.color.b = 1;
   velocity_marker.color.a = 1.0;
   velocity_marker.frame_locked = true;
+  double previous_velocity = 0.0;
 
   int count = 1;
   for (const auto& lane : lane_waypoints_array.lanes)
   {
+    geometry_msgs::Point previous_point;
+    previous_point.x = 0.0;
+    previous_point.y = 0.0;
+    previous_point.z = 0.0;
     velocity_marker.ns = "global_velocity_lane_" + std::to_string(count);
     for (int i = 0; i < static_cast<int>(lane.waypoints.size()); i++)
     {
@@ -116,13 +122,27 @@ void createGlobalLaneArrayVelocityMarker(const autoware_msgs::LaneArray& lane_wa
       geometry_msgs::Point relative_p;
       relative_p.y = 0.5;
       velocity_marker.pose.position = calcAbsoluteCoordinate(relative_p, lane.waypoints[i].pose.pose);
-      velocity_marker.pose.position.z += 0.2;
+      velocity_marker.pose.position.z += lane.waypoints[i].twist.twist.linear.x;
 
-      // double to string
-      std::string vel = std::to_string(mps2kmph(lane.waypoints[i].twist.twist.linear.x));
-      velocity_marker.text = vel.erase(vel.find_first_of(".") + 2);
-
-      tmp_marker_array.markers.push_back(velocity_marker);
+      if (lane.waypoints[i].twist.twist.linear.x != previous_velocity)
+      {
+        // double to string
+        std::string vel = std::to_string(mps2kmph(lane.waypoints[i].twist.twist.linear.x));
+        velocity_marker.text = vel.erase(vel.find_first_of(".") + 2);
+        if ((previous_point.x == 0.0 && previous_point.y == 0.0 && previous_point.z == 0.0) ||
+            (lane.waypoints[i].pose.pose.position.x - previous_point.x) *
+                        (lane.waypoints[i].pose.pose.position.x - previous_point.x) +
+                    (lane.waypoints[i].pose.pose.position.y - previous_point.y) *
+                        (lane.waypoints[i].pose.pose.position.y - previous_point.y) +
+                    (lane.waypoints[i].pose.pose.position.z - previous_point.z) *
+                        (lane.waypoints[i].pose.pose.position.z - previous_point.z) >
+                g_global_resolution * g_global_resolution)
+        {
+          tmp_marker_array.markers.push_back(velocity_marker);
+          previous_point = lane.waypoints[i].pose.pose.position;
+          previous_velocity = lane.waypoints[i].twist.twist.linear.x;
+        }
+      }
     }
     count++;
   }
@@ -150,6 +170,7 @@ void createGlobalLaneArrayChangeFlagMarker(const autoware_msgs::LaneArray& lane_
   int count = 1;
   for (const auto& lane : lane_waypoints_array.lanes)
   {
+    std::string previous_str = "";
     marker.ns = "global_change_flag_lane_" + std::to_string(count);
     for (int i = 0; i < static_cast<int>(lane.waypoints.size()); i++)
     {
@@ -179,8 +200,11 @@ void createGlobalLaneArrayChangeFlagMarker(const autoware_msgs::LaneArray& lane_
       }
 
       marker.text = str;
-
-      tmp_marker_array.markers.push_back(marker);
+      if (str != previous_str)
+      {
+        tmp_marker_array.markers.push_back(marker);
+      }
+      previous_str = str;
     }
     count++;
   }
@@ -202,6 +226,7 @@ void createLocalWaypointVelocityMarker(std_msgs::ColorRGBA color, int closest_wa
   velocity.scale.z = 0.4;
   velocity.color = color;
   velocity.frame_locked = true;
+  double previous_velocity = 0.0;
 
   for (int i = 0; i < static_cast<int>(lane_waypoint.waypoints.size()); i++)
   {
@@ -209,14 +234,18 @@ void createLocalWaypointVelocityMarker(std_msgs::ColorRGBA color, int closest_wa
     geometry_msgs::Point relative_p;
     relative_p.y = -0.65;
     velocity.pose.position = calcAbsoluteCoordinate(relative_p, lane_waypoint.waypoints[i].pose.pose);
-    velocity.pose.position.z += 0.2;
+    velocity.pose.position.z += lane_waypoint.waypoints[i].twist.twist.linear.x;
 
     // double to string
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(1) << mps2kmph(lane_waypoint.waypoints[i].twist.twist.linear.x);
-    velocity.text = oss.str();
+    if(lane_waypoint.waypoints[i].twist.twist.linear.x != previous_velocity)
+    {
+      std::ostringstream oss;
+      oss << std::fixed << std::setprecision(1) << mps2kmph(lane_waypoint.waypoints[i].twist.twist.linear.x);
+      velocity.text = oss.str();
+      g_local_waypoints_marker_array.markers.push_back(velocity);
+      previous_velocity = lane_waypoint.waypoints[i].twist.twist.linear.x;
+    }
 
-    g_local_waypoints_marker_array.markers.push_back(velocity);
   }
 }
 
@@ -242,7 +271,19 @@ void createGlobalLaneArrayMarker(std_msgs::ColorRGBA color, const autoware_msgs:
     {
       geometry_msgs::Point point;
       point = el.pose.pose.position;
-      lane_waypoint_marker.points.push_back(point);
+      geometry_msgs::Point previous_point;
+      previous_point.x = 0.0;
+      previous_point.y = 0.0;
+      previous_point.z = 0.0;
+      if ((previous_point.x == 0.0 && previous_point.y == 0.0 && previous_point.z == 0.0) ||
+          (point.x - previous_point.x) * (point.x - previous_point.x) +
+                  (point.y - previous_point.y) * (point.y - previous_point.y) +
+                  (point.z - previous_point.z) * (point.z - previous_point.z) >
+              g_global_resolution * g_global_resolution)
+      {
+        lane_waypoint_marker.points.push_back(point);
+        previous_point = point;
+      }
     }
     g_global_marker_array.markers.push_back(lane_waypoint_marker);
     count++;
@@ -267,13 +308,28 @@ void createGlobalLaneArrayOrientationMarker(const autoware_msgs::LaneArray& lane
   int count = 1;
   for (const auto& lane : lane_waypoints_array.lanes)
   {
+    geometry_msgs::Point previous_point;
+    previous_point.x = 0.0;
+    previous_point.y = 0.0;
+    previous_point.z = 0.0;
     lane_waypoint_marker.ns = "global_lane_waypoint_orientation_marker_" + std::to_string(count);
 
     for (int i = 0; i < static_cast<int>(lane.waypoints.size()); i++)
     {
       lane_waypoint_marker.id = i;
       lane_waypoint_marker.pose = lane.waypoints[i].pose.pose;
-      tmp_marker_array.markers.push_back(lane_waypoint_marker);
+      if((previous_point.x == 0.0 && previous_point.y == 0.0 && previous_point.z == 0.0) ||
+          (lane.waypoints[i].pose.pose.position.x - previous_point.x) *
+                      (lane.waypoints[i].pose.pose.position.x - previous_point.x) +
+                  (lane.waypoints[i].pose.pose.position.y - previous_point.y) *
+                      (lane.waypoints[i].pose.pose.position.y - previous_point.y) +
+                  (lane.waypoints[i].pose.pose.position.z - previous_point.z) *
+                      (lane.waypoints[i].pose.pose.position.z - previous_point.z) >
+              g_global_resolution * g_global_resolution)
+      {
+        tmp_marker_array.markers.push_back(lane_waypoint_marker);
+        previous_point = lane.waypoints[i].pose.pose.position;
+      }
     }
     count++;
   }
@@ -301,6 +357,11 @@ void createGlobalLaneArrayTurnMarker(const autoware_msgs::LaneArray& lane_waypoi
   int count = 1;
   for (const auto& lane : lane_waypoints_array.lanes)
   {
+
+    geometry_msgs::Point previous_point;
+    previous_point.x = 0.0;
+    previous_point.y = 0.0;
+    previous_point.z = 0.0;
     lane_waypoint_marker.ns = "global_lane_waypoint_turn_marker_" + std::to_string(count);
 
     for (int i = 0; i < static_cast<int>(lane.waypoints.size()); i++)
@@ -329,7 +390,17 @@ void createGlobalLaneArrayTurnMarker(const autoware_msgs::LaneArray& lane_waypoi
         wp_orientation.normalize();
 
         tf2::convert(wp_orientation, lane_waypoint_marker.pose.orientation);
-        tmp_marker_array.markers.push_back(lane_waypoint_marker);
+        if ((previous_point.x == 0.0 && previous_point.y == 0.0 && previous_point.z == 0.0) ||
+            (lane.waypoints[i].pose.pose.position.x - previous_point.x) *
+                        (lane.waypoints[i].pose.pose.position.x - previous_point.x) +
+                    (lane.waypoints[i].pose.pose.position.y - previous_point.y) *
+                        (lane.waypoints[i].pose.pose.position.y - previous_point.y) +
+                    (lane.waypoints[i].pose.pose.position.z - previous_point.z) *
+                        (lane.waypoints[i].pose.pose.position.z - previous_point.z) >
+                g_global_resolution * g_global_resolution)
+        {
+          tmp_marker_array.markers.push_back(lane_waypoint_marker);
+        }
       }
     }
     count++;
