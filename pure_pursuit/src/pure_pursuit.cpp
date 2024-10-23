@@ -174,6 +174,25 @@ bool PurePursuit::canGetCurvature(double* output_kappa)
   {
     return false;
   }
+  // bool switching_direction = false;
+  // double previous_velocity = 0, current_velocity = 0, next_velocity = 0;
+  // if (next_waypoint_number_ > 0)
+  // {
+  //   previous_velocity = current_waypoints_.at(next_waypoint_number_ - 1).twist.twist.linear.x;
+  // }
+  // current_velocity = current_waypoints_.at(next_waypoint_number_).twist.twist.linear.x;
+  // if (next_waypoint_number_ < static_cast<int>(current_waypoints_.size() - 1))
+  // {
+  //   next_velocity = current_waypoints_.at(next_waypoint_number_ + 1).twist.twist.linear.x;
+  // }
+  // next_velocity = current_waypoints_.at(next_waypoint_number_ + 1).twist.twist.linear.x;
+  // switching_direction = (previous_velocity * next_velocity < 0.001 || current_velocity * next_velocity < 0.001);
+  // if (switching_direction)
+  // {
+  //   ROS_WARN("switching direction");
+  //   return false;
+  // }
+
   // if is_linear_interpolation_ is false or next waypoint is first or last
   if (!is_linear_interpolation_ || next_waypoint_number_ == 0 ||
       next_waypoint_number_ == (static_cast<int>(current_waypoints_.size() - 1)))
