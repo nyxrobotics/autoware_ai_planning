@@ -70,7 +70,7 @@ private:
   ros::NodeHandle n_;
 
   // base configs
-  bool use_back_;                 // backward search
+  bool allow_backward_;           // backward search
   bool use_potential_heuristic_;  // potential cost function
   bool use_wavefront_heuristic_;  // wavefront cost function
   double time_limit_;             // planning time limit [msec]

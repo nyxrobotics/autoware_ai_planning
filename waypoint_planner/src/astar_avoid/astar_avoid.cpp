@@ -480,8 +480,8 @@ void AstarAvoid::publishWaypoints(const ros::TimerEvent& e)
   autoware_msgs::Lane safety_waypoints;
   safety_waypoints.header = current_waypoints_.header;
   safety_waypoints.increment = current_waypoints_.increment;
-  ROS_INFO("[AstarAvoid::publishWaypoints] next_index: %d ->  last: %d", next_index,
-           static_cast<int>(current_waypoints_.waypoints.size()));
+  // ROS_INFO("[AstarAvoid::publishWaypoints] next_index: %d ->  last: %d", next_index,
+  //          static_cast<int>(current_waypoints_.waypoints.size()));
   for (int i = next_index;
        i < next_index + safety_waypoints_size_ && i < static_cast<int>(current_waypoints_.waypoints.size()); ++i)
   {

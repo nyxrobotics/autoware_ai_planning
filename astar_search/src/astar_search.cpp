@@ -15,13 +15,14 @@
  */
 
 #include "astar_search/astar_search.h"
+#include <cmath>
 
 AstarSearch::AstarSearch()
 {
   ros::NodeHandle private_nh_("~");
 
   // base configs
-  private_nh_.param<bool>("use_back", use_back_, true);
+  private_nh_.param<bool>("allow_backward", allow_backward_, true);
   private_nh_.param<bool>("use_potential_heuristic", use_potential_heuristic_, true);
   private_nh_.param<bool>("use_wavefront_heuristic", use_wavefront_heuristic_, false);
   private_nh_.param<double>("time_limit", time_limit_, 5000.0);
@@ -111,7 +112,7 @@ void AstarSearch::createStateUpdateTable()
     nu.back = false;
     state_update_table_[i].emplace_back(nu);
 
-    if (use_back_)
+    if (allow_backward_)
     {
       // backward
       nu.shift_x = step * std::cos(theta) * -1.0;
@@ -432,7 +433,7 @@ bool AstarSearch::search()
       {
         next_hc = nearest_distance * distance_heuristic_weight_;
       }
-      // Ignore invalit nodes
+      // Ignore invalid nodes
       if ((enable_path_angle_limit_ && move_angle > path_angle_limit_) ||
           (enable_path_length_limit_ && move_distance > path_length_limit_))
       {
