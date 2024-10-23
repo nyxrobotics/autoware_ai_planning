@@ -251,7 +251,7 @@ double PurePursuitNode::computeLookaheadDistance() const
                                             ld > maximum_lookahead_distance ? maximum_lookahead_distance : ld;
 }
 
-int PurePursuitNode::getSgn() const
+int PurePursuitNode::getLaneSgn() const
 {
   int sgn = 0;
   if (direction_ == LaneDirection::Forward)
@@ -265,14 +265,41 @@ int PurePursuitNode::getSgn() const
   return sgn;
 }
 
+int PurePursuitNode::getWaypointSgn() const
+{
+  int direction = 1;
+  const geometry_msgs::Pose current_pose = pp_.getCurrentPose();
+  const geometry_msgs::Pose target_pose = pp_.getCurrentWaypoints().at(1).pose.pose;
+  // Check waypoint direction
+  if (pp_.getCurrentWaypoints().size() > 2)
+  {
+    const geometry_msgs::Pose next_target_pose = pp_.getCurrentWaypoints().at(2).pose.pose;
+    tf::Quaternion current_orientation(current_pose.orientation.x, current_pose.orientation.y,
+                                       current_pose.orientation.z, current_pose.orientation.w);
+    tf::Matrix3x3 current_orientation_matrix(current_orientation);
+    double roll, pitch, yaw;
+    current_orientation_matrix.getRPY(roll, pitch, yaw);
+    double current_direction = yaw;
+    double waypoint_direction = atan2(next_target_pose.position.y - target_pose.position.y,
+                                      next_target_pose.position.x - target_pose.position.x);
+
+    if (cos(current_direction) * cos(waypoint_direction) < 0)
+    {
+      ROS_WARN("[PurePursuitNode] Backward movement detected");
+      direction = -1;
+    }
+  }
+  return direction;
+}
+
 double PurePursuitNode::computeCommandVelocity() const
 {
   if (velocity_source_ == enumToInteger(Mode::dialog))
   {
-    return getSgn() * kmph2mps(const_velocity_);
+    return kmph2mps(const_velocity_) * getLaneSgn() * getWaypointSgn();
   }
 
-  return command_linear_velocity_;
+  return command_linear_velocity_ * getWaypointSgn();
 }
 
 // Assume constant acceleration motion, v_f^2 - v_i^2 = 2 * a * delta_d
@@ -379,7 +406,7 @@ void PurePursuitNode::connectVirtualLastWaypoints(autoware_msgs::Lane* lane, Lan
   virtual_last_waypoint.pose.pose.orientation = pn.orientation;
   virtual_last_waypoint.twist.twist.linear.x = 0.0;
   geometry_msgs::Point virtual_last_point_rlt;
-  const int sgn = getSgn();
+  const int sgn = getLaneSgn();
   for (double dist = minimum_lookahead_distance_; dist > 0.0; dist -= interval)
   {
     virtual_last_point_rlt.x += interval * sgn;
