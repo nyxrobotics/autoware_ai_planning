@@ -373,34 +373,49 @@ void AstarAvoid::mergeAvoidWaypoints(const nav_msgs::Path& path, const int start
   }
 
   // set waypoints for avoiding
-  int direction = 1;
-  for (int i = 0; i < path.poses.size(); ++i)
+  if (allow_backward_)
   {
-    autoware_msgs::Waypoint wp;
-    wp.pose.header = base_waypoints_.header;
-    wp.pose.pose = transformPose(path.poses.at(i).pose,
-                                 getTransform(base_waypoints_.header.frame_id, path.poses.at(i).header.frame_id));
-    wp.pose.pose.position.z = current_pose_global_.pose.position.z;  // height = const
-    // Check direction
-    if (i < path.poses.size() - 1)
+    int direction = 1;
+    for (int i = 0; i < path.poses.size(); ++i)
     {
-      tf::Quaternion current_orientation(path.poses.at(i).pose.orientation.x, path.poses.at(i).pose.orientation.y,
-                                         path.poses.at(i).pose.orientation.z, path.poses.at(i).pose.orientation.w);
-      double current_direction = tf::getYaw(current_orientation);
-      double waypoint_direction = atan2(path.poses.at(i + 1).pose.position.y - path.poses.at(i).pose.position.y,
-                                        path.poses.at(i + 1).pose.position.x - path.poses.at(i).pose.position.x);
-      if (cos(current_direction) * cos(waypoint_direction) < 0)
+      autoware_msgs::Waypoint wp;
+      wp.pose.header = base_waypoints_.header;
+      wp.pose.pose = transformPose(path.poses.at(i).pose,
+                                   getTransform(base_waypoints_.header.frame_id, path.poses.at(i).header.frame_id));
+      wp.pose.pose.position.z = current_pose_global_.pose.position.z;  // height = const
+      // Check direction
+      if (i < path.poses.size() - 1)
       {
-        direction = -1;
+        tf::Quaternion current_orientation(path.poses.at(i).pose.orientation.x, path.poses.at(i).pose.orientation.y,
+                                           path.poses.at(i).pose.orientation.z, path.poses.at(i).pose.orientation.w);
+        double current_direction = tf::getYaw(current_orientation);
+        double waypoint_direction = atan2(path.poses.at(i + 1).pose.position.y - path.poses.at(i).pose.position.y,
+                                          path.poses.at(i + 1).pose.position.x - path.poses.at(i).pose.position.x);
+        if (cos(current_direction) * cos(waypoint_direction) < 0)
+        {
+          direction = -1;
+        }
+        else
+        {
+          direction = 1;
+        }
       }
-      else
-      {
-        direction = 1;
-      }
+      wp.twist.twist.linear.x = direction * avoid_waypoints_velocity_ / 3.6;  // velocity = const
+      // ROS_INFO("[avoid_waypoints_(2)]x:%lf, y:%lf, index:%d", wp.pose.pose.position.x, wp.pose.pose.position.y, i);
+      avoid_waypoints_.waypoints.push_back(wp);
     }
-    wp.twist.twist.linear.x = direction * avoid_waypoints_velocity_ / 3.6;  // velocity = const
-    // ROS_INFO("[avoid_waypoints_(2)]x:%lf, y:%lf, index:%d", wp.pose.pose.position.x, wp.pose.pose.position.y, i);
-    avoid_waypoints_.waypoints.push_back(wp);
+  }
+  else
+  {
+    for (const auto& pose : path.poses)
+    {
+      autoware_msgs::Waypoint wp;
+      wp.pose.header = base_waypoints_.header;
+      wp.pose.pose = transformPose(pose.pose, getTransform(base_waypoints_.header.frame_id, pose.header.frame_id));
+      wp.pose.pose.position.z = current_pose_global_.pose.position.z;  // height = const
+      wp.twist.twist.linear.x = avoid_waypoints_velocity_ / 3.6;       // velocity = const
+      avoid_waypoints_.waypoints.push_back(wp);
+    }
   }
 
   // smoothing connection point ( only deceleration )

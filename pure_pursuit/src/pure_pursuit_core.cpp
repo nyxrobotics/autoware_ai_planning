@@ -294,12 +294,22 @@ int PurePursuitNode::getWaypointSgn() const
 
 double PurePursuitNode::computeCommandVelocity() const
 {
+  double target_velocity = 0;
+
   if (velocity_source_ == enumToInteger(Mode::dialog))
   {
-    return kmph2mps(const_velocity_) * getWaypointSgn();
+    target_velocity = kmph2mps(const_velocity_) * getLaneSgn();
+  }
+  else
+  {
+    target_velocity = command_linear_velocity_;
   }
 
-  return fabs(command_linear_velocity_) * getWaypointSgn();
+  if (allow_backward_)
+  {
+    target_velocity = getWaypointSgn() * fabs(target_velocity);
+  }
+  return target_velocity;
 }
 
 // Assume constant acceleration motion, v_f^2 - v_i^2 = 2 * a * delta_d
