@@ -155,9 +155,10 @@ bool PurePursuit::canGetCurvature(double* output_kappa)
 {
   // search next waypoint
   getNextWaypoint();
-  if (next_waypoint_number_ == -1)
+  if (next_waypoint_number_ == -1 || next_waypoint_number_ > static_cast<int>(current_waypoints_.size() - 1))
   {
-    ROS_INFO("lost next waypoint");
+    ROS_ERROR("lost next waypoint");
+    *output_kappa = 0;
     return false;
   }
   // check whether curvature is valid or not
@@ -172,6 +173,7 @@ bool PurePursuit::canGetCurvature(double* output_kappa)
   }
   if (!is_valid_curve)
   {
+    ROS_ERROR("cannot get valid curvature");
     return false;
   }
   // bool switching_direction = false;
