@@ -301,10 +301,6 @@ double PurePursuitNode::computeCommandVelocity() const
     target_velocity = command_linear_velocity_;
   }
 
-  if (allow_backward_)
-  {
-    target_velocity = getWaypointSgn() * fabs(target_velocity);
-  }
   return target_velocity;
 }
 
