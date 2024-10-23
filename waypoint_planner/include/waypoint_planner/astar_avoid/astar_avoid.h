@@ -67,7 +67,7 @@ private:
   // params
   int safety_waypoints_size_;   // output waypoint size [-]
   double update_rate_;          // publishing rate [Hz]
-
+  bool allow_backward_;         // allow backward driving
   bool enable_avoidance_;           // enable avoidance mode
   double avoid_waypoints_velocity_; // constant velocity on planned waypoints [km/h]
   double avoid_start_velocity_;     // self velocity for staring avoidance behavior [km/h]

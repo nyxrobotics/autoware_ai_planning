@@ -50,6 +50,7 @@ void PurePursuitNode::initForROS()
 {
   // ros parameter settings
   std::string out_twist, out_ctrl_cmd;
+  private_nh_.param("allow_backward", allow_backward_, true);
   private_nh_.param("velocity_source", velocity_source_, 0);
   private_nh_.param("is_linear_interpolation", is_linear_interpolation_, true);
   private_nh_.param("add_virtual_end_waypoints", add_virtual_end_waypoints_, false);
@@ -199,7 +200,8 @@ void PurePursuitNode::publishTwistStamped(const bool& can_get_curvature, const d
   {
     ts.twist.angular.z *= -1.0;
   }
-  // ROS_WARN("[pure_pursuit] ts.twist.linear.x = %lf, ts.twist.angular.z = %lf", ts.twist.linear.x, ts.twist.angular.z);
+  // ROS_WARN("[pure_pursuit] ts.twist.linear.x = %lf, ts.twist.angular.z = %lf", ts.twist.linear.x,
+  // ts.twist.angular.z);
   pub1_.publish(ts);
 }
 
@@ -250,8 +252,7 @@ double PurePursuitNode::computeLookaheadDistance() const
   const double ld = current_linear_velocity_ * lookahead_distance_ratio_;
 
   return ld < minimum_lookahead_distance_ ? minimum_lookahead_distance_ :
-         ld > maximum_lookahead_distance  ? maximum_lookahead_distance :
-                                            ld;
+                                            ld > maximum_lookahead_distance ? maximum_lookahead_distance : ld;
 }
 
 int PurePursuitNode::getLaneSgn() const

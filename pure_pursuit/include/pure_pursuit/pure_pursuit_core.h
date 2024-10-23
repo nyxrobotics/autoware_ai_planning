@@ -79,7 +79,7 @@ private:
   double update_rate_;
 
   // variables
-  bool is_linear_interpolation_, add_virtual_end_waypoints_;
+  bool is_linear_interpolation_, add_virtual_end_waypoints_, allow_backward_;
   bool is_waypoint_set_, is_pose_set_, is_velocity_set_;
   double current_linear_velocity_, command_linear_velocity_;
   double current_status_timeout_;    // Set timeout seconds for current velocity and pose

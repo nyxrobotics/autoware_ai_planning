@@ -19,6 +19,7 @@
 
 AstarAvoid::AstarAvoid() : nh_(), private_nh_("~")
 {
+  private_nh_.param("allow_backward", allow_backward_, true);
   private_nh_.param<int>("safety_waypoints_size", safety_waypoints_size_, 100);
   private_nh_.param<double>("update_rate", update_rate_, 10.0);
 
