@@ -244,8 +244,8 @@ double PurePursuitNode::computeLookaheadDistance() const
     return const_lookahead_distance_;
   }
 
-  const double maximum_lookahead_distance = current_linear_velocity_ * 10;
-  const double ld = current_linear_velocity_ * lookahead_distance_ratio_;
+  const double maximum_lookahead_distance = fabs(current_linear_velocity_) * 10;
+  const double ld = fabs(current_linear_velocity_) * lookahead_distance_ratio_;
 
   return ld < minimum_lookahead_distance_ ? minimum_lookahead_distance_ :
                                             ld > maximum_lookahead_distance ? maximum_lookahead_distance : ld;
