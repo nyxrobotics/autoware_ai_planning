@@ -153,14 +153,73 @@ void PurePursuit::getNextWaypoint()
 
 bool PurePursuit::canGetCurvature(double* output_kappa)
 {
-  // search next waypoint
+  // search for the next waypoint
   getNextWaypoint();
   if (next_waypoint_number_ == -1)
   {
     ROS_INFO("lost next waypoint");
     return false;
   }
-  // check whether curvature is valid or not
+
+  // Handle switchback behavior when use_back is enabled and current_waypoint_number_ is valid
+  if (use_back_ && current_waypoint_number_ != -1)
+  {
+    // Check the sign of the velocity between the current waypoint and the next waypoint
+    double current_velocity = current_waypoints_.at(current_waypoint_number_).twist.twist.linear.x;
+    double next_velocity = current_waypoints_.at(next_waypoint_number_).twist.twist.linear.x;
+
+    // If the velocity sign changes, calculate a virtual target position
+    if ((current_velocity >= 0 && next_velocity < 0) || (current_velocity < 0 && next_velocity >= 0))
+    {
+      // Find the nearest switchback point
+      int nearest_switchback_index = current_waypoint_number_;
+      for (int i = current_waypoint_number_; i < next_waypoint_number_; i++)
+      {
+        double velocity_i = current_waypoints_.at(i).twist.twist.linear.x;
+        double velocity_next = current_waypoints_.at(i + 1).twist.twist.linear.x;
+
+        if ((velocity_i >= 0 && velocity_next < 0) || (velocity_i < 0 && velocity_next >= 0))
+        {
+          nearest_switchback_index = i;
+          break;
+        }
+      }
+
+      // Get the points just before the switchback point
+      const geometry_msgs::Point turning_point = current_waypoints_.at(nearest_switchback_index - 1).pose.pose.position;
+      const geometry_msgs::Point entry_point = current_waypoints_.at(nearest_switchback_index - 2).pose.pose.position;
+
+      // Calculate a position that is minimum_lookahead_distance_ away from the current position
+      tf::Vector3 target_point(current_pose_.position.x, current_pose_.position.y, 0.0);
+      tf::Vector3 entry(entry_point.x, entry_point.y, 0.0);
+      tf::Vector3 turning(turning_point.x, turning_point.y, 0.0);
+
+      tf::Vector3 entry_to_turning = turning - entry;
+      tf::Vector3 entry_to_target = target_point - entry;
+      tf::Vector3 intersection =
+          entry + (entry_to_target.dot(entry_to_turning) / entry_to_turning.dot(entry_to_turning)) * entry_to_turning;
+
+      // Set the target position to the closest point before the switchback
+      next_target_position_.x = intersection.x();
+      next_target_position_.y = intersection.y();
+      next_target_position_.z = current_pose_.position.z;
+
+      *output_kappa = calcCurvature(next_target_position_);
+
+      // Update current_waypoint_number_
+      current_waypoint_number_ = nearest_switchback_index;
+
+      return true;
+    }
+  }
+
+  // Handle the case where current_waypoint_number_ is not initialized (use_back is disabled or not applicable)
+  if (current_waypoint_number_ == -1)
+  {
+    current_waypoint_number_ = next_waypoint_number_;  // Initialize current_waypoint_number_
+  }
+
+  // Check if curvature is valid
   bool is_valid_curve = false;
   for (const auto& el : current_waypoints_)
   {
@@ -174,16 +233,20 @@ bool PurePursuit::canGetCurvature(double* output_kappa)
   {
     return false;
   }
-  // if is_linear_interpolation_ is false or next waypoint is first or last
+
+  // Normal curve following when no switchback
   if (!is_linear_interpolation_ || next_waypoint_number_ == 0 ||
       next_waypoint_number_ == (static_cast<int>(current_waypoints_.size() - 1)))
   {
     next_target_position_ = current_waypoints_.at(next_waypoint_number_).pose.pose.position;
     *output_kappa = calcCurvature(next_target_position_);
+
+    // Update current_waypoint_number_
+    current_waypoint_number_ = next_waypoint_number_;
     return true;
   }
 
-  // linear interpolation and calculate angular velocity
+  // Perform linear interpolation for the next target
   const bool interpolation = interpolateNextTarget(next_waypoint_number_, &next_target_position_);
 
   if (!interpolation)
@@ -193,6 +256,10 @@ bool PurePursuit::canGetCurvature(double* output_kappa)
   }
 
   *output_kappa = calcCurvature(next_target_position_);
+
+  // Update current_waypoint_number_
+  current_waypoint_number_ = next_waypoint_number_;
+
   return true;
 }
 

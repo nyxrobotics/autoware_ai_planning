@@ -44,15 +44,16 @@ PurePursuitNode::PurePursuitNode()
   health_checker_ptr_->ENABLE();
   // initialize for PurePursuit
   pp_.setLinearInterpolationParameter(is_linear_interpolation_);
+  pp_.setUseBackward(use_back_);
 }
 
 void PurePursuitNode::initForROS()
 {
   // ros parameter settings
   std::string out_twist, out_ctrl_cmd;
-  private_nh_.param<bool>("use_back", use_back_, true);
   private_nh_.param("velocity_source", velocity_source_, 0);
   private_nh_.param("is_linear_interpolation", is_linear_interpolation_, true);
+  private_nh_.param("use_back", use_back_, true);
   private_nh_.param("add_virtual_end_waypoints", add_virtual_end_waypoints_, false);
   private_nh_.param("const_lookahead_distance", const_lookahead_distance_, 4.0);
   private_nh_.param("const_velocity", const_velocity_, 5.0);

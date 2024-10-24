@@ -64,6 +64,11 @@ public:
     is_linear_interpolation_ = param;
   }
 
+  void setUseBackward(bool use_back)
+  {
+    use_back_ = use_back;
+  }
+
   // for debug on ROS
   geometry_msgs::Point getPoseOfNextWaypoint() const
   {
@@ -99,7 +104,9 @@ private:
 
   // variables
   bool is_linear_interpolation_{ false };
+  bool use_back_{ false };
   int next_waypoint_number_{ -1 };
+  int current_waypoint_number_{ -1 };
   double lookahead_distance_{ 0.0 };
   double minimum_lookahead_distance_{ 6.0 };
   double current_linear_velocity_{ 0.0 };
