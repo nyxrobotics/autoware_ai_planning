@@ -23,6 +23,7 @@ AstarAvoid::AstarAvoid() : nh_(), private_nh_("~")
   private_nh_.param<double>("update_rate", update_rate_, 10.0);
 
   private_nh_.param<bool>("enable_avoidance", enable_avoidance_, false);
+  private_nh_.param<bool>("use_back", use_back_, true);
   private_nh_.param<double>("avoid_waypoints_velocity", avoid_waypoints_velocity_, 10.0);
   private_nh_.param<double>("avoid_start_velocity", avoid_start_velocity_, 5.0);
   private_nh_.param<double>("replan_interval", replan_interval_, 2.0);
