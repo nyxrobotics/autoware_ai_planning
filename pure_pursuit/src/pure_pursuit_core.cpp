@@ -50,6 +50,7 @@ void PurePursuitNode::initForROS()
 {
   // ros parameter settings
   std::string out_twist, out_ctrl_cmd;
+  private_nh_.param<bool>("use_back", use_back_, true);
   private_nh_.param("velocity_source", velocity_source_, 0);
   private_nh_.param("is_linear_interpolation", is_linear_interpolation_, true);
   private_nh_.param("add_virtual_end_waypoints", add_virtual_end_waypoints_, false);
@@ -72,8 +73,7 @@ void PurePursuitNode::initForROS()
   if (private_nh_.hasParam("publishes_for_steering_robot"))
   {
     bool publishes_for_steering_robot;
-    private_nh_.param(
-      "publishes_for_steering_robot", publishes_for_steering_robot, false);
+    private_nh_.param("publishes_for_steering_robot", publishes_for_steering_robot, false);
     if (publishes_for_steering_robot)
     {
       output_interface_ = "ctrl_cmd";
@@ -85,12 +85,10 @@ void PurePursuitNode::initForROS()
   }
   else
   {
-    private_nh_.param(
-      "output_interface", output_interface_, std::string("all"));
+    private_nh_.param("output_interface", output_interface_, std::string("all"));
   }
 
-  if (output_interface_ != "twist" && output_interface_ != "ctrl_cmd" &&
-      output_interface_ != "all")
+  if (output_interface_ != "twist" && output_interface_ != "ctrl_cmd" && output_interface_ != "all")
   {
     ROS_ERROR("Control command interface type is not valid");
     ros::shutdown();
