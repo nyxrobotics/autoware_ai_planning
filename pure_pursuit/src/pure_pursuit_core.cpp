@@ -103,6 +103,7 @@ void PurePursuitNode::initForROS()
   sub2_ = nh_.subscribe("current_pose", 10, &PurePursuitNode::callbackFromCurrentPose, this);
   sub3_ = nh_.subscribe("config/waypoint_follower", 10, &PurePursuitNode::callbackFromConfig, this);
   sub4_ = nh_.subscribe("current_velocity", 10, &PurePursuitNode::callbackFromCurrentVelocity, this);
+  sub5_ = nh_.subscribe("closest_waypoint", 1, &PurePursuitNode::closestWaypointCallback, this);
 
   // setup publishers
   pub1_ = nh_.advertise<geometry_msgs::TwistStamped>(out_twist, 10);
@@ -391,6 +392,11 @@ void PurePursuitNode::callbackFromWayPoints(const autoware_msgs::LaneConstPtr& m
 
   is_waypoint_set_ = true;
   target_waypoints_time_ = ros::Time::now();
+}
+
+void PurePursuitNode::closestWaypointCallback(const std_msgs::Int32& msg)
+{
+  pp_.setCurrentWaypointIndex(msg.data);
 }
 
 void PurePursuitNode::connectVirtualLastWaypoints(autoware_msgs::Lane* lane, LaneDirection direction)

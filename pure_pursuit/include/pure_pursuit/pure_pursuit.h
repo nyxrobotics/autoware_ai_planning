@@ -69,6 +69,11 @@ public:
     use_back_ = use_back;
   }
 
+  void setCurrentWaypointIndex(int index)
+  {
+    current_waypoint_index_ = index;
+  }
+
   // for debug on ROS
   geometry_msgs::Point getPoseOfNextWaypoint() const
   {

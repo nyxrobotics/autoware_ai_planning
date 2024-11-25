@@ -22,6 +22,7 @@
 #include <geometry_msgs/TwistStamped.h>
 #include <ros/ros.h>
 #include <std_msgs/Float32.h>
+#include <std_msgs/Int32.h>
 
 // User defined includes
 #include <autoware_config_msgs/ConfigWaypointFollower.h>
@@ -73,7 +74,7 @@ private:
   ros::Publisher pub1_, pub2_, pub11_, pub12_, pub13_, pub14_, pub15_, pub16_, pub17_, pub18_;
 
   // subscriber
-  ros::Subscriber sub1_, sub2_, sub3_, sub4_;
+  ros::Subscriber sub1_, sub2_, sub3_, sub4_, sub5_;
 
   // control loop update rate
   double update_rate_;
@@ -103,6 +104,7 @@ private:
   void callbackFromCurrentPose(const geometry_msgs::PoseStampedConstPtr& msg);
   void callbackFromCurrentVelocity(const geometry_msgs::TwistStampedConstPtr& msg);
   void callbackFromWayPoints(const autoware_msgs::LaneConstPtr& msg);
+  void closestWaypointCallback(const std_msgs::Int32& msg);
 
   // initializer
   void initForROS();

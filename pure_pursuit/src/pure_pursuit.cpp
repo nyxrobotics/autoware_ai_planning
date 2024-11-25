@@ -180,7 +180,7 @@ bool PurePursuit::canGetCurvature(double& output_kappa, double& output_velocity)
   const int path_size = static_cast<int>(current_waypoints_.size());
 
   // Get the updated indices
-  current_waypoint_index_ = updateCurrentIndex(current_lane, current_pose_, current_waypoint_index_);
+  // current_waypoint_index_ = updateCurrentIndex(current_lane, current_pose_, current_waypoint_index_);
 
   if (current_waypoint_index_ < 0 || current_waypoint_index_ > path_size - 1)
   {
