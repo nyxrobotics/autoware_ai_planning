@@ -42,7 +42,7 @@ private:
   double deceleration_obstacle_;           // (m/s^2) deceleration for obstacles
   double deceleration_stopline_;           // (m/s^2) deceleration for stopline
   double velocity_change_limit_;           // (m/s)
-  double temporal_waypoints_size_;         // (meter)
+  double local_waypoints_size_;            // (meter)
   int wpidx_detectionResultByOtherNodes_;  // waypoints index@finalwaypoints
 
   // ROS param
@@ -125,7 +125,7 @@ public:
 
   double getTemporalWaypointsSize() const
   {
-    return temporal_waypoints_size_;
+    return local_waypoints_size_;
   }
 
   pcl::PointCloud<pcl::PointXYZ> getPoints() const

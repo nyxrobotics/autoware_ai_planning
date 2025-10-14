@@ -469,7 +469,7 @@ Changelog for package waypoint_maker
 * published local path marker ,and some fix in order to be easy to see
 * published local path marker ,and some fix in order to be easy to see
 * changed topic name
-* Change subscribing topic from 'safety_waypoint' to 'temporal_waypoints'
+* Change subscribing topic from 'safety_waypoint' to 'local_waypoints'
 * first commit major update for waypoint_saver
 * modified velocity_set
 * Fix subscribing topic

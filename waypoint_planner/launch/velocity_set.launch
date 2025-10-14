@@ -23,7 +23,7 @@
   <arg name="velocity_change_limit" default="9.972"/>
   <arg name="deceleration_range" default="0"/>
   <!-- final waypoints size ahead of ego-vehicle to be published -->
-  <arg name="temporal_waypoints_size" default="100"/>
+  <arg name="local_waypoints_size" default="100"/>
 
   <node pkg="waypoint_planner" type="velocity_set" name="velocity_set" output="screen">
     <param name="update_rate" value="$(arg update_rate)"/>
@@ -43,7 +43,7 @@
     <param name="deceleration_stopline" value="$(arg deceleration_stopline)"/>
     <param name="velocity_change_limit" value="$(arg velocity_change_limit)"/>
     <param name="deceleration_range" value="$(arg deceleration_range)"/>
-    <param name="temporal_waypoints_size" value="$(arg temporal_waypoints_size)"/>
+    <param name="local_waypoints_size" value="$(arg local_waypoints_size)"/>
   </node>
 
 </launch>

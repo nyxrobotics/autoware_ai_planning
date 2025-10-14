@@ -16,7 +16,7 @@
   <arg name="deceleration_stopline" default="0.6"/>
   <arg name="velocity_change_limit" default="9.972"/>
   <arg name="deceleration_range" default="0"/>
-  <arg name="temporal_waypoints_size" default="100"/>
+  <arg name="local_waypoints_size" default="100"/>
   <arg name="use_ll2" default="false"/>
 
   <group if="$(arg use_ll2)">
@@ -38,7 +38,7 @@
       <param name="deceleration_stopline" value="$(arg deceleration_stopline)"/>
       <param name="velocity_change_limit" value="$(arg velocity_change_limit)"/>
       <param name="deceleration_range" value="$(arg deceleration_range)"/>
-      <param name="temporal_waypoints_size" value="$(arg temporal_waypoints_size)"/>
+      <param name="local_waypoints_size" value="$(arg local_waypoints_size)"/>
     </node>
   </group>
 
@@ -61,7 +61,7 @@
       <param name="deceleration_stopline" value="$(arg deceleration_stopline)"/>
       <param name="velocity_change_limit" value="$(arg velocity_change_limit)"/>
       <param name="deceleration_range" value="$(arg deceleration_range)"/>
-      <param name="temporal_waypoints_size" value="$(arg temporal_waypoints_size)"/>
+      <param name="local_waypoints_size" value="$(arg local_waypoints_size)"/>
     </node>
   </group>
 

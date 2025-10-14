@@ -27,7 +27,7 @@ VelocitySetInfo::VelocitySetInfo()
   , deceleration_obstacle_(0.8)
   , deceleration_stopline_(0.6)
   , velocity_change_limit_(2.77)
-  , temporal_waypoints_size_(100)
+  , local_waypoints_size_(100)
   , wpidx_detectionResultByOtherNodes_(-1)
   , set_pose_(false)
 {
@@ -45,7 +45,7 @@ VelocitySetInfo::VelocitySetInfo()
   private_nh_.param<double>("deceleration_stopline", deceleration_stopline_, 0.6);
   private_nh_.param<double>("velocity_change_limit", velocity_change_limit_, 2.77);
   private_nh_.param<double>("deceleration_range", deceleration_range_, 0);
-  private_nh_.param<double>("temporal_waypoints_size", temporal_waypoints_size_, 100.0);
+  private_nh_.param<double>("local_waypoints_size", local_waypoints_size_, 100.0);
 
   health_checker_ptr_ = std::make_shared<autoware_health_checker::HealthChecker>(nh, private_nh_);
   health_checker_ptr_->ENABLE();
@@ -68,7 +68,7 @@ void VelocitySetInfo::configCallback(const autoware_config_msgs::ConfigVelocityS
   deceleration_stopline_ = config->deceleration_stopline;
   velocity_change_limit_ = config->velocity_change_limit / 3.6;  // kmph -> mps
   deceleration_range_ = config->deceleration_range;
-  temporal_waypoints_size_ = config->temporal_waypoints_size;
+  local_waypoints_size_ = config->local_waypoints_size;
 }
 
 void VelocitySetInfo::pointsCallback(const sensor_msgs::PointCloud2ConstPtr& msg)

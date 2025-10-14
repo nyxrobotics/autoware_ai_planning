@@ -20,23 +20,20 @@
 
 static ros::Publisher _pub;
 
-void callback(const autoware_msgs::Lane &msg)
+void callback(const autoware_msgs::Lane& msg)
 {
-    _pub.publish(msg);
+  _pub.publish(msg);
 }
 
-
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "path_select");
+  ros::init(argc, argv, "path_select");
 
-    ros::NodeHandle nh;
-    ros::Subscriber twist_sub = nh.subscribe("temporal_waypoints", 1, callback);
-    _pub = nh.advertise<autoware_msgs::Lane>("final_waypoints", 1000,true);
+  ros::NodeHandle nh;
+  ros::Subscriber twist_sub = nh.subscribe("local_waypoints", 1, callback);
+  _pub = nh.advertise<autoware_msgs::Lane>("final_waypoints", 1000, true);
 
-    ros::spin();
+  ros::spin();
 
-
-
-    return 0;
+  return 0;
 }
