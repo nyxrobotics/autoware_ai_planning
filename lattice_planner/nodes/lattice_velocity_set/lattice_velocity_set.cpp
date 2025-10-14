@@ -66,7 +66,7 @@ double g_detection_height_bottom = -2.0;
 double g_others_distance = 8.0;         // meter: stopping distance from obstacles (using VSCAN)
 double g_decel = 1.5;                   // (m/s) deceleration
 double g_accel_limit = 2.778;           // (m/s) about 10 km/h
-double g_local_waypoints_size = 100.0;  // meter
+double g_local_waypoints_length = 100.0;  // meter
 
 // Publisher
 ros::Publisher g_range_pub;
@@ -112,12 +112,12 @@ bool PathVset::checkWaypoint(int num, const char* name) const
   return true;
 }
 
-// set about '_local_waypoints_size' meter waypoints from closest waypoint
+// set about '_local_waypoints_length' meter waypoints from closest waypoint
 void PathVset::setTemporalWaypoints()
 {
   if (g_closest_waypoint < 0)
     return;
-  int size = (int)(g_local_waypoints_size / getInterval()) + 1;
+  int size = (int)(g_local_waypoints_length / getInterval()) + 1;
 
   local_waypoints_.waypoints.clear();
   local_waypoints_.header = current_waypoints_.header;
@@ -305,7 +305,7 @@ void configCallback(const autoware_config_msgs::ConfigLatticeVelocitySetConstPtr
   g_decel = config->deceleration;
   g_accel_limit = kmph2mps(config->accel_limit);
   g_deceleration_range = config->deceleration_range;
-  g_local_waypoints_size = config->local_waypoints_size;
+  g_local_waypoints_length = config->local_waypoints_length;
 }
 
 void currentVelCallback(const geometry_msgs::TwistStampedConstPtr& msg)

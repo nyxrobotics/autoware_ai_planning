@@ -33,8 +33,8 @@ bool VelocitySetPath::checkWaypoint(int wp_num) const
   return true;
 }
 
-// set about '_local_waypoints_size' meter waypoints from closest waypoint
-void VelocitySetPath::setTemporalWaypoints(int local_waypoints_size, int closest_waypoint,
+// set about '_local_waypoints_length' meter waypoints from closest waypoint
+void VelocitySetPath::setTemporalWaypoints(int local_waypoints_length, int closest_waypoint,
                                            geometry_msgs::PoseStamped control_pose)
 {
   if (closest_waypoint < 0)
@@ -52,7 +52,7 @@ void VelocitySetPath::setTemporalWaypoints(int local_waypoints_size, int closest
   local_waypoints_.waypoints.push_back(std::move(current_point));
 
   int total_waypoints = getNewWaypointsSize();
-  for (int i = 0; i < local_waypoints_size; i++)
+  for (int i = 0; i < local_waypoints_length; i++)
   {
     if (closest_waypoint + i >= total_waypoints)
       return;

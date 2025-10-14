@@ -16,7 +16,7 @@
   <arg name="deceleration_stopline" default="0.6"/>
   <arg name="accel_limit" default="9.972"/>
   <arg name="deceleration_range" default="0"/>
-  <arg name="local_waypoints_size" default="100"/>
+  <arg name="local_waypoints_length" default="100"/>
 
   <node pkg="waypoint_planner" type="velocity_set_lanelet2" name="velocity_set" output="screen">
     <param name="use_crosswalk_detection" value="$(arg use_crosswalk_detection)"/>
@@ -35,7 +35,7 @@
     <param name="deceleration_stopline" value="$(arg deceleration_stopline)"/>
     <param name="accel_limit" value="$(arg accel_limit)"/>
     <param name="deceleration_range" value="$(arg deceleration_range)"/>
-    <param name="local_waypoints_size" value="$(arg local_waypoints_size)"/>
+    <param name="local_waypoints_length" value="$(arg local_waypoints_length)"/>
   </node>
 
 </launch>

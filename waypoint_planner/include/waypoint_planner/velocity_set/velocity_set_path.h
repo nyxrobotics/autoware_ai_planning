@@ -44,7 +44,7 @@ public:
   void avoidSuddenDeceleration(double accel_limit, double deceleration, int closest_waypoint);
   void avoidSuddenAcceleration(double decelerationint, int closest_waypoint);
   void changeWaypointsForDeceleration(double deceleration, int closest_waypoint, int obstacle_waypoint);
-  void setTemporalWaypoints(int local_waypoints_size, int closest_waypoint, geometry_msgs::PoseStamped control_pose);
+  void setTemporalWaypoints(int local_waypoints_length, int closest_waypoint, geometry_msgs::PoseStamped control_pose);
   void initializeNewWaypoints();
   void resetFlag();
   void setPrevWaypoints(const autoware_msgs::Lane& lane);
