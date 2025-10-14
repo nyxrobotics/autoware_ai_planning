@@ -224,7 +224,7 @@ void displayDetectionRange(const autoware_msgs::Lane& lane, const CrossWalk& cro
 
 // obstacle detection for crosswalk
 EControl crossWalkDetection(const pcl::PointCloud<pcl::PointXYZ>& pcl_points, const CrossWalk& crosswalk,
-                            const geometry_msgs::Pose localizer_pose, const int points_threshold,
+                            const geometry_msgs::Pose localizer_pose, const int min_obstacle_points,
                             ObstaclePoints* obstacle_points)
 {
   int crosswalk_id = crosswalk.getDetectionCrossWalkID();
@@ -253,7 +253,7 @@ EControl crossWalkDetection(const pcl::PointCloud<pcl::PointXYZ>& pcl_points, co
           point_temp.z = p.z;
           obstacle_points->setStopPoint(calcAbsoluteCoordinate(point_temp, localizer_pose));
         }
-        if (stop_count > points_threshold)
+        if (stop_count > min_obstacle_points)
           return EControl::STOP;
       }
     }
@@ -267,7 +267,7 @@ EControl crossWalkDetection(const pcl::PointCloud<pcl::PointXYZ>& pcl_points, co
 
 int detectStopObstacle(const pcl::PointCloud<pcl::PointXYZ>& pcl_points, const int closest_waypoint,
                        const autoware_msgs::Lane& lane, const CrossWalk& crosswalk, double stop_range,
-                       double points_threshold, const geometry_msgs::Pose localizer_pose,
+                       double min_obstacle_points, const geometry_msgs::Pose localizer_pose,
                        ObstaclePoints* obstacle_points, EObstacleType* obstacle_type,
                        const int wpidx_detection_result_by_other_nodes)
 {
@@ -291,7 +291,7 @@ int detectStopObstacle(const pcl::PointCloud<pcl::PointXYZ>& pcl_points, const i
     if (i == crosswalk.getDetectionWaypoint())
     {
       // found an obstacle in the cross walk
-      if (crossWalkDetection(pcl_points, crosswalk, localizer_pose, points_threshold, obstacle_points) ==
+      if (crossWalkDetection(pcl_points, crosswalk, localizer_pose, min_obstacle_points, obstacle_points) ==
           EControl::STOP)
       {
         stop_obstacle_waypoint = i;
@@ -324,7 +324,7 @@ int detectStopObstacle(const pcl::PointCloud<pcl::PointXYZ>& pcl_points, const i
     }
 
     // there is an obstacle if the number of points exceeded the threshold
-    if (stop_point_count > points_threshold)
+    if (stop_point_count > min_obstacle_points)
     {
       stop_obstacle_waypoint = i;
       *obstacle_type = EObstacleType::ON_WAYPOINTS;
@@ -339,7 +339,7 @@ int detectStopObstacle(const pcl::PointCloud<pcl::PointXYZ>& pcl_points, const i
 
 int detectDecelerateObstacle(const pcl::PointCloud<pcl::PointXYZ>& pcl_points, const int closest_waypoint,
                              const autoware_msgs::Lane& lane, const double stop_range, const double deceleration_range,
-                             const double points_threshold, const geometry_msgs::Pose localizer_pose,
+                             const double min_obstacle_points, const geometry_msgs::Pose localizer_pose,
                              ObstaclePoints* obstacle_points)
 {
   int decelerate_obstacle_waypoint = -1;
@@ -371,7 +371,7 @@ int detectDecelerateObstacle(const pcl::PointCloud<pcl::PointXYZ>& pcl_points, c
     }
 
     // there is an obstacle if the number of points exceeded the threshold
-    if (decelerate_point_count > points_threshold)
+    if (decelerate_point_count > min_obstacle_points)
     {
       decelerate_obstacle_waypoint = i;
       break;

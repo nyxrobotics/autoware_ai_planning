@@ -19,7 +19,7 @@
 VelocitySetInfo::VelocitySetInfo()
   : stop_range_(1.3)
   , deceleration_range_(0)
-  , points_threshold_(10)
+  , min_obstacle_points_(10)
   , detection_height_top_(0.2)
   , detection_height_bottom_(-1.7)
   , stop_distance_obstacle_(10)
@@ -38,7 +38,7 @@ VelocitySetInfo::VelocitySetInfo()
   private_nh_.param<double>("stop_distance_obstacle", stop_distance_obstacle_, 10.0);
   private_nh_.param<double>("stop_distance_stopline", stop_distance_stopline_, 5.0);
   private_nh_.param<double>("detection_range", stop_range_, 1.3);
-  private_nh_.param<int>("points_threshold", points_threshold_, 10);
+  private_nh_.param<int>("min_obstacle_points", min_obstacle_points_, 10);
   private_nh_.param<double>("detection_height_top", detection_height_top_, 0.2);
   private_nh_.param<double>("detection_height_bottom", detection_height_bottom_, -1.7);
   private_nh_.param<double>("deceleration_obstacle", deceleration_obstacle_, 0.8);
@@ -61,7 +61,7 @@ void VelocitySetInfo::configCallback(const autoware_config_msgs::ConfigVelocityS
   stop_distance_obstacle_ = config->stop_distance_obstacle;
   stop_distance_stopline_ = config->stop_distance_stopline;
   stop_range_ = config->detection_range;
-  points_threshold_ = config->threshold_points;
+  min_obstacle_points_ = config->threshold_points;
   detection_height_top_ = config->detection_height_top;
   detection_height_bottom_ = config->detection_height_bottom;
   deceleration_obstacle_ = config->deceleration_obstacle;
