@@ -28,7 +28,7 @@ VelocitySetInfo::VelocitySetInfo()
   , deceleration_stopline_(0.6)
   , accel_limit_(2.77)
   , local_waypoints_length_(100)
-  , wpidx_detectionResultByOtherNodes_(-1)
+  , subscribed_obstacle_index_(-1)
   , set_pose_(false)
 {
   ros::NodeHandle private_nh_("~");
@@ -97,7 +97,7 @@ void VelocitySetInfo::pointsCallback(const sensor_msgs::PointCloud2ConstPtr& msg
 
 void VelocitySetInfo::detectionCallback(const std_msgs::Int32& msg)
 {
-  wpidx_detectionResultByOtherNodes_ = msg.data;
+  subscribed_obstacle_index_ = msg.data;
 }
 
 void VelocitySetInfo::controlPoseCallback(const geometry_msgs::PoseStampedConstPtr& msg)

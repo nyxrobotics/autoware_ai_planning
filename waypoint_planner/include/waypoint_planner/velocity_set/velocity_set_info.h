@@ -32,18 +32,18 @@ class VelocitySetInfo
 {
 private:
   // parameters
-  double stop_range_;                      // if obstacle is in this range, stop
-  double deceleration_range_;              // if obstacle is in this range, decelerate
-  int min_obstacle_points_;                // points threshold to find obstacles
-  double detection_height_top_;            // from sensor
-  double detection_height_bottom_;         // from sensor
-  double stop_distance_obstacle_;          // (meter) stopping distance from obstacles
-  double stop_distance_stopline_;          // (meter) stopping distance from stoplines
-  double deceleration_obstacle_;           // (m/s^2) deceleration for obstacles
-  double deceleration_stopline_;           // (m/s^2) deceleration for stopline
-  double accel_limit_;                     // (m/s)
-  double local_waypoints_length_;          // (meter)
-  int wpidx_detectionResultByOtherNodes_;  // waypoints index@finalwaypoints
+  double stop_range_;               // if obstacle is in this range, stop
+  double deceleration_range_;       // if obstacle is in this range, decelerate
+  int min_obstacle_points_;         // points threshold to find obstacles
+  double detection_height_top_;     // from sensor
+  double detection_height_bottom_;  // from sensor
+  double stop_distance_obstacle_;   // (meter) stopping distance from obstacles
+  double stop_distance_stopline_;   // (meter) stopping distance from stoplines
+  double deceleration_obstacle_;    // (m/s^2) deceleration for obstacles
+  double deceleration_stopline_;    // (m/s^2) deceleration for stopline
+  double accel_limit_;              // (m/s)
+  double local_waypoints_length_;   // (meter)
+  int subscribed_obstacle_index_;   // waypoints index@finalwaypoints
 
   // ROS param
   double points_min_range_;
@@ -70,7 +70,7 @@ public:
 
   int getDetectionResultByOtherNodes() const
   {
-    return wpidx_detectionResultByOtherNodes_;
+    return subscribed_obstacle_index_;
   }
 
   double getStopRange() const
