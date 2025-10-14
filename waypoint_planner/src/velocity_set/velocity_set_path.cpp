@@ -129,7 +129,7 @@ void VelocitySetPath::avoidSuddenAcceleration(double deceleration, int closest_w
   return;
 }
 
-void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, double deceleration, int closest_waypoint)
+void VelocitySetPath::avoidSuddenDeceleration(double accel_limit, double deceleration, int closest_waypoint)
 {
   if (closest_waypoint < 0)
     return;
@@ -141,7 +141,7 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
     return;
 
   // accelerate or decelerate within the limit
-  if (std::abs(current_vel_ - closest_vel) < velocity_change_limit)
+  if (std::abs(current_vel_ - closest_vel) < accel_limit)
     return;
 
   // bring up the forward waypoints' velocity to avoid sudden deceleration.
@@ -152,7 +152,7 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
 
     // sqrt(v^2 - 2ax)
     std::array<int, 2> range = { closest_waypoint, closest_waypoint + i };
-    double changed_vel = calcChangedVelocity(std::abs(current_vel_) - velocity_change_limit, -deceleration, range);
+    double changed_vel = calcChangedVelocity(std::abs(current_vel_) - accel_limit, -deceleration, range);
     const double target_vel = updated_waypoints_.waypoints[closest_waypoint + i].twist.twist.linear.x;
 
     if (std::isnan(changed_vel))

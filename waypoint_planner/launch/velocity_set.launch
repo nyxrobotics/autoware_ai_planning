@@ -20,7 +20,7 @@
   <!-- # deceleration when approaching stopline -->
   <arg name="deceleration_stopline" default="0.6"/>
   <!-- used in avoid sudden deceleration, in km/h -->
-  <arg name="velocity_change_limit" default="9.972"/>
+  <arg name="accel_limit" default="9.972"/>
   <arg name="deceleration_range" default="0"/>
   <!-- final waypoints size ahead of ego-vehicle to be published -->
   <arg name="local_waypoints_size" default="100"/>
@@ -41,7 +41,7 @@
     <param name="detection_height_bottom" value="$(arg detection_height_bottom)"/>
     <param name="deceleration_obstacle" value="$(arg deceleration_obstacle)"/>
     <param name="deceleration_stopline" value="$(arg deceleration_stopline)"/>
-    <param name="velocity_change_limit" value="$(arg velocity_change_limit)"/>
+    <param name="accel_limit" value="$(arg accel_limit)"/>
     <param name="deceleration_range" value="$(arg deceleration_range)"/>
     <param name="local_waypoints_size" value="$(arg local_waypoints_size)"/>
   </node>

@@ -26,7 +26,7 @@ VelocitySetInfo::VelocitySetInfo()
   , stop_distance_stopline_(5)
   , deceleration_obstacle_(0.8)
   , deceleration_stopline_(0.6)
-  , velocity_change_limit_(2.77)
+  , accel_limit_(2.77)
   , local_waypoints_size_(100)
   , wpidx_detectionResultByOtherNodes_(-1)
   , set_pose_(false)
@@ -43,7 +43,7 @@ VelocitySetInfo::VelocitySetInfo()
   private_nh_.param<double>("detection_height_bottom", detection_height_bottom_, -1.7);
   private_nh_.param<double>("deceleration_obstacle", deceleration_obstacle_, 0.8);
   private_nh_.param<double>("deceleration_stopline", deceleration_stopline_, 0.6);
-  private_nh_.param<double>("velocity_change_limit", velocity_change_limit_, 2.77);
+  private_nh_.param<double>("accel_limit", accel_limit_, 2.77);
   private_nh_.param<double>("deceleration_range", deceleration_range_, 0);
   private_nh_.param<double>("local_waypoints_size", local_waypoints_size_, 100.0);
 
@@ -66,7 +66,7 @@ void VelocitySetInfo::configCallback(const autoware_config_msgs::ConfigVelocityS
   detection_height_bottom_ = config->detection_height_bottom;
   deceleration_obstacle_ = config->deceleration_obstacle;
   deceleration_stopline_ = config->deceleration_stopline;
-  velocity_change_limit_ = config->velocity_change_limit / 3.6;  // kmph -> mps
+  accel_limit_ = config->accel_limit / 3.6;  // kmph -> mps
   deceleration_range_ = config->deceleration_range;
   local_waypoints_size_ = config->local_waypoints_size;
 }

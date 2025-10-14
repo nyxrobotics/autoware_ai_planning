@@ -41,7 +41,7 @@ private:
   double stop_distance_stopline_;          // (meter) stopping distance from stoplines
   double deceleration_obstacle_;           // (m/s^2) deceleration for obstacles
   double deceleration_stopline_;           // (m/s^2) deceleration for stopline
-  double velocity_change_limit_;           // (m/s)
+  double accel_limit_;                     // (m/s)
   double local_waypoints_size_;            // (meter)
   int wpidx_detectionResultByOtherNodes_;  // waypoints index@finalwaypoints
 
@@ -120,7 +120,7 @@ public:
 
   double getVelocityChangeLimit() const
   {
-    return velocity_change_limit_;
+    return accel_limit_;
   }
 
   double getTemporalWaypointsSize() const

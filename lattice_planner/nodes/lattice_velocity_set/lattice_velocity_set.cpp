@@ -63,10 +63,10 @@ double g_deceleration_range = 1.8;  // if obstacle is in this range, decelerate
 int g_threshold_points = 15;
 double g_detection_height_top = 2.0;  // actually +2.0m
 double g_detection_height_bottom = -2.0;
-double g_others_distance = 8.0;          // meter: stopping distance from obstacles (using VSCAN)
-double g_decel = 1.5;                    // (m/s) deceleration
-double g_velocity_change_limit = 2.778;  // (m/s) about 10 km/h
-double g_local_waypoints_size = 100.0;   // meter
+double g_others_distance = 8.0;         // meter: stopping distance from obstacles (using VSCAN)
+double g_decel = 1.5;                   // (m/s) deceleration
+double g_accel_limit = 2.778;           // (m/s) about 10 km/h
+double g_local_waypoints_size = 100.0;  // meter
 
 // Publisher
 ros::Publisher g_range_pub;
@@ -205,8 +205,8 @@ void PathVset::avoidSuddenBraking()
   {
     if (!checkWaypoint(g_closest_waypoint + j, "avoidSuddenBraking"))
       return;
-    if (getWaypointVelocityMPS(g_closest_waypoint + j) < g_current_vel - g_velocity_change_limit)  // we must change
-                                                                                                   // waypoints
+    if (getWaypointVelocityMPS(g_closest_waypoint + j) < g_current_vel - g_accel_limit)  // we must change
+                                                                                         // waypoints
       break;
     if (j == examin_range - 1)  // we don't have to change waypoints
       return;
@@ -221,7 +221,7 @@ void PathVset::avoidSuddenBraking()
   }
 
   // decelerate gradually
-  double temp1 = (g_current_vel - g_velocity_change_limit + 1.389) * (g_current_vel - g_velocity_change_limit + 1.389);
+  double temp1 = (g_current_vel - g_accel_limit + 1.389) * (g_current_vel - g_accel_limit + 1.389);
   double temp2 = 2 * g_decel * interval;
   for (num = g_closest_waypoint - 1;; num++)
   {
@@ -303,7 +303,7 @@ void configCallback(const autoware_config_msgs::ConfigLatticeVelocitySetConstPtr
   g_detection_height_top = config->detection_height_top;
   g_detection_height_bottom = config->detection_height_bottom;
   g_decel = config->deceleration;
-  g_velocity_change_limit = kmph2mps(config->velocity_change_limit);
+  g_accel_limit = kmph2mps(config->accel_limit);
   g_deceleration_range = config->deceleration_range;
   g_local_waypoints_size = config->local_waypoints_size;
 }

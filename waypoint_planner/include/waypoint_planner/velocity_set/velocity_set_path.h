@@ -41,7 +41,7 @@ public:
 
   double calcChangedVelocity(const double& current_vel, const double& accel, const std::array<int, 2>& range) const;
   void changeWaypointsForStopping(int stop_waypoint, int obstacle_waypoint, int closest_waypoint, double deceleration);
-  void avoidSuddenDeceleration(double velocity_change_limit, double deceleration, int closest_waypoint);
+  void avoidSuddenDeceleration(double accel_limit, double deceleration, int closest_waypoint);
   void avoidSuddenAcceleration(double decelerationint, int closest_waypoint);
   void changeWaypointsForDeceleration(double deceleration, int closest_waypoint, int obstacle_waypoint);
   void setTemporalWaypoints(int local_waypoints_size, int closest_waypoint, geometry_msgs::PoseStamped control_pose);
