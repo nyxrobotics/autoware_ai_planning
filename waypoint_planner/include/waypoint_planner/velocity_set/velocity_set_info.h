@@ -30,7 +30,7 @@
 
 class VelocitySetInfo
 {
- private:
+private:
   // parameters
   double stop_range_;                          // if obstacle is in this range, stop
   double deceleration_range_;                  // if obstacle is in this range, decelerate
@@ -47,6 +47,13 @@ class VelocitySetInfo
 
   // ROS param
   double remove_points_upto_;
+  double max_search_range_;
+
+  // vehicle info
+  double robot_length_;
+  double robot_width_;
+  double robot_base2back_;
+  bool use_robot_shape_;
 
   pcl::PointCloud<pcl::PointXYZ> points_;
   geometry_msgs::Pose localizer_pose_;       // pose of sensor
@@ -55,19 +62,18 @@ class VelocitySetInfo
 
   std::shared_ptr<autoware_health_checker::HealthChecker> health_checker_ptr_;
 
- public:
+public:
   VelocitySetInfo();
   ~VelocitySetInfo() = default;
 
   // ROS Callback
-  void configCallback(const autoware_config_msgs::ConfigVelocitySetConstPtr &msg);
-  void pointsCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
-  void controlPoseCallback(const geometry_msgs::PoseStampedConstPtr &msg);
-  void detectionCallback(const std_msgs::Int32 &msg);
-  void setLocalizerPose(const geometry_msgs::TransformStamped &map_to_lidar_tf);
+  void configCallback(const autoware_config_msgs::ConfigVelocitySetConstPtr& msg);
+  void pointsCallback(const sensor_msgs::PointCloud2ConstPtr& msg);
+  void controlPoseCallback(const geometry_msgs::PoseStampedConstPtr& msg);
+  void detectionCallback(const std_msgs::Int32& msg);
+  void setLocalizerPose(const geometry_msgs::TransformStamped& map_to_lidar_tf);
 
   void clearPoints();
-
 
   int getDetectionResultByOtherNodes() const
   {
@@ -147,6 +153,31 @@ class VelocitySetInfo
   bool getSetPose() const
   {
     return set_pose_;
+  }
+
+  double getMaxSearchRange() const
+  {
+    return max_search_range_;
+  }
+
+  double getRobotLength() const
+  {
+    return robot_length_;
+  }
+
+  double getRobotWidth() const
+  {
+    return robot_width_;
+  }
+
+  double getRobotBase2Back() const
+  {
+    return robot_base2back_;
+  }
+
+  bool getUseRobotShape() const
+  {
+    return use_robot_shape_;
   }
 };
 

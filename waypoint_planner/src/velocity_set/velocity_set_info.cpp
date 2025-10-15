@@ -47,10 +47,16 @@ VelocitySetInfo::VelocitySetInfo()
   private_nh_.param<double>("velocity_change_limit", vel_change_limit_kph, 9.972);
   private_nh_.param<double>("deceleration_range", deceleration_range_, 0);
   private_nh_.param<double>("temporal_waypoints_size", temporal_waypoints_size_, 100.0);
+  private_nh_.param<double>("max_search_range", max_search_range_, 10.0);
+  private_nh_.param<double>("robot_length", robot_length_, 0.82);
+  private_nh_.param<double>("robot_width", robot_width_, 0.7);
+  private_nh_.param<double>("robot_base2back", robot_base2back_, 0.137);
+  use_robot_shape_ =
+      robot_length_ > std::numeric_limits<double>::epsilon() && robot_width_ > std::numeric_limits<double>::epsilon();
 
   velocity_change_limit_ = vel_change_limit_kph / 3.6;  // kph -> mps
 
-  health_checker_ptr_ = std::make_shared<autoware_health_checker::HealthChecker>(nh,private_nh_);
+  health_checker_ptr_ = std::make_shared<autoware_health_checker::HealthChecker>(nh, private_nh_);
   health_checker_ptr_->ENABLE();
 }
 
@@ -59,7 +65,7 @@ void VelocitySetInfo::clearPoints()
   points_.clear();
 }
 
-void VelocitySetInfo::configCallback(const autoware_config_msgs::ConfigVelocitySetConstPtr &config)
+void VelocitySetInfo::configCallback(const autoware_config_msgs::ConfigVelocitySetConstPtr& config)
 {
   stop_distance_obstacle_ = config->stop_distance_obstacle;
   stop_distance_stopline_ = config->stop_distance_stopline;
@@ -69,19 +75,20 @@ void VelocitySetInfo::configCallback(const autoware_config_msgs::ConfigVelocityS
   detection_height_bottom_ = config->detection_height_bottom;
   deceleration_obstacle_ = config->deceleration_obstacle;
   deceleration_stopline_ = config->deceleration_stopline;
-  velocity_change_limit_ = config->velocity_change_limit / 3.6; // kmph -> mps
+  velocity_change_limit_ = config->velocity_change_limit / 3.6;  // kmph -> mps
   deceleration_range_ = config->deceleration_range;
   temporal_waypoints_size_ = config->temporal_waypoints_size;
 }
 
-void VelocitySetInfo::pointsCallback(const sensor_msgs::PointCloud2ConstPtr &msg)
+void VelocitySetInfo::pointsCallback(const sensor_msgs::PointCloud2ConstPtr& msg)
 {
-  health_checker_ptr_->CHECK_RATE("topic_rate_points_no_ground_slow", 8, 5, 1, "topic points_no_ground subscribe rate slow.");
+  health_checker_ptr_->CHECK_RATE("topic_rate_points_no_ground_slow", 8, 5, 1,
+                                  "topic points_no_ground subscribe rate slow.");
   pcl::PointCloud<pcl::PointXYZ> sub_points;
   pcl::fromROSMsg(*msg, sub_points);
 
   points_.clear();
-  for (const auto &v : sub_points)
+  for (const auto& v : sub_points)
   {
     if (v.x == 0 && v.y == 0)
       continue;
@@ -97,12 +104,12 @@ void VelocitySetInfo::pointsCallback(const sensor_msgs::PointCloud2ConstPtr &msg
   }
 }
 
-void VelocitySetInfo::detectionCallback(const std_msgs::Int32 &msg)
+void VelocitySetInfo::detectionCallback(const std_msgs::Int32& msg)
 {
   wpidx_detection_result_by_other_nodes_ = msg.data;
 }
 
-void VelocitySetInfo::controlPoseCallback(const geometry_msgs::PoseStampedConstPtr &msg)
+void VelocitySetInfo::controlPoseCallback(const geometry_msgs::PoseStampedConstPtr& msg)
 {
   control_pose_ = *msg;
 
@@ -110,10 +117,10 @@ void VelocitySetInfo::controlPoseCallback(const geometry_msgs::PoseStampedConstP
     set_pose_ = true;
 }
 
-void VelocitySetInfo::setLocalizerPose(const geometry_msgs::TransformStamped &map_to_lidar_tf)
+void VelocitySetInfo::setLocalizerPose(const geometry_msgs::TransformStamped& map_to_lidar_tf)
 {
-    localizer_pose_.position.x = map_to_lidar_tf.transform.translation.x;
-    localizer_pose_.position.y = map_to_lidar_tf.transform.translation.y;
-    localizer_pose_.position.z = map_to_lidar_tf.transform.translation.z;
-    localizer_pose_.orientation = map_to_lidar_tf.transform.rotation;
+  localizer_pose_.position.x = map_to_lidar_tf.transform.translation.x;
+  localizer_pose_.position.y = map_to_lidar_tf.transform.translation.y;
+  localizer_pose_.position.z = map_to_lidar_tf.transform.translation.z;
+  localizer_pose_.orientation = map_to_lidar_tf.transform.rotation;
 }
