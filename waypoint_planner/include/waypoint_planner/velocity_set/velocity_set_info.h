@@ -32,25 +32,25 @@ class VelocitySetInfo
 {
  private:
   // parameters
-  double stop_range_;               // if obstacle is in this range, stop
-  double deceleration_range_;       // if obstacle is in this range, decelerate
-  int points_threshold_;            // points threshold to find obstacles
-  double detection_height_top_;     // from sensor
-  double detection_height_bottom_;  // from sensor
-  double stop_distance_obstacle_;   // (meter) stopping distance from obstacles
-  double stop_distance_stopline_;   // (meter) stopping distance from stoplines
-  double deceleration_obstacle_;    // (m/s^2) deceleration for obstacles
-  double deceleration_stopline_;    // (m/s^2) deceleration for stopline
-  double velocity_change_limit_;    // (m/s)
-  double temporal_waypoints_size_;  // (meter)
-  int  wpidx_detectionResultByOtherNodes_; // waypoints index@finalwaypoints
+  double stop_range_;                          // if obstacle is in this range, stop
+  double deceleration_range_;                  // if obstacle is in this range, decelerate
+  int points_threshold_;                       // points threshold to find obstacles
+  double detection_height_top_;                // from sensor
+  double detection_height_bottom_;             // from sensor
+  double stop_distance_obstacle_;              // (meter) stopping distance from obstacles
+  double stop_distance_stopline_;              // (meter) stopping distance from stoplines
+  double deceleration_obstacle_;               // (m/s^2) deceleration for obstacles
+  double deceleration_stopline_;               // (m/s^2) deceleration for stopline
+  double velocity_change_limit_;               // (m/s)
+  double temporal_waypoints_size_;             // (meter)
+  int wpidx_detection_result_by_other_nodes_;  // waypoints index@finalwaypoints
 
   // ROS param
   double remove_points_upto_;
 
   pcl::PointCloud<pcl::PointXYZ> points_;
-  geometry_msgs::Pose localizer_pose_;  // pose of sensor
-  geometry_msgs::PoseStamped control_pose_;    // pose of base_link
+  geometry_msgs::Pose localizer_pose_;       // pose of sensor
+  geometry_msgs::PoseStamped control_pose_;  // pose of base_link
   bool set_pose_;
 
   std::shared_ptr<autoware_health_checker::HealthChecker> health_checker_ptr_;
@@ -71,7 +71,7 @@ class VelocitySetInfo
 
   int getDetectionResultByOtherNodes() const
   {
-    return wpidx_detectionResultByOtherNodes_;
+    return wpidx_detection_result_by_other_nodes_;
   }
 
   double getStopRange() const
@@ -150,4 +150,4 @@ class VelocitySetInfo
   }
 };
 
-#endif // VELOCITY_SET_INFO_H
+#endif  // VELOCITY_SET_INFO_H

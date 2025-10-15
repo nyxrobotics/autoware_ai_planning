@@ -17,19 +17,19 @@
 #include <waypoint_planner/velocity_set/velocity_set_info.h>
 
 VelocitySetInfo::VelocitySetInfo()
-  : stop_range_(1.3),
-    deceleration_range_(0),
-    points_threshold_(10),
-    detection_height_top_(0.2),
-    detection_height_bottom_(-1.7),
-    stop_distance_obstacle_(10),
-    stop_distance_stopline_(5),
-    deceleration_obstacle_(0.8),
-    deceleration_stopline_(0.6),
-    velocity_change_limit_(2.77),
-    temporal_waypoints_size_(100),
-    wpidx_detectionResultByOtherNodes_(-1),
-    set_pose_(false)
+  : stop_range_(1.3)
+  , deceleration_range_(0)
+  , points_threshold_(10)
+  , detection_height_top_(0.2)
+  , detection_height_bottom_(-1.7)
+  , stop_distance_obstacle_(10)
+  , stop_distance_stopline_(5)
+  , deceleration_obstacle_(0.8)
+  , deceleration_stopline_(0.6)
+  , velocity_change_limit_(2.77)
+  , temporal_waypoints_size_(100)
+  , wpidx_detection_result_by_other_nodes_(-1)
+  , set_pose_(false)
 {
   ros::NodeHandle private_nh_("~");
   ros::NodeHandle nh;
@@ -99,7 +99,7 @@ void VelocitySetInfo::pointsCallback(const sensor_msgs::PointCloud2ConstPtr &msg
 
 void VelocitySetInfo::detectionCallback(const std_msgs::Int32 &msg)
 {
-    wpidx_detectionResultByOtherNodes_ = msg.data;
+  wpidx_detection_result_by_other_nodes_ = msg.data;
 }
 
 void VelocitySetInfo::controlPoseCallback(const geometry_msgs::PoseStampedConstPtr &msg)
