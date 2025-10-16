@@ -80,7 +80,8 @@ private:
   ros::Subscriber sub1_, sub5_, sub6_;
   message_filters::Subscriber<geometry_msgs::PoseStamped> sub2_;
   message_filters::Subscriber<geometry_msgs::TwistStamped> sub3_;
-  using PoseTwistSyncPolicy = message_filters::sync_policies::ApproximateTime<geometry_msgs::PoseStamped, geometry_msgs::TwistStamped>;
+  using PoseTwistSyncPolicy =
+      message_filters::sync_policies::ApproximateTime<geometry_msgs::PoseStamped, geometry_msgs::TwistStamped>;
   using PoseTwistSync = message_filters::Synchronizer<PoseTwistSyncPolicy>;
   std::shared_ptr<PoseTwistSync> pose_twist_sync_;
 
@@ -112,7 +113,7 @@ private:
   double lane_change_target_minimum_;
   double vlength_hermite_curve_;
   int search_closest_waypoint_minimum_dt_;
-  double current_status_timeout_;    // Set timeout seconds for current velocity and pose
+  double current_status_timeout_;  // Set timeout seconds for current velocity and pose
   ros::Time current_pose_time_, current_velocity_time_;
 
   // topics
@@ -150,7 +151,7 @@ private:
   void publishClosestWaypoint(const int32_t clst_wp);
   void publishChangeFlag(const ChangeFlag flag);
   void publishVehicleLocation(const int32_t clst_wp, const int32_t larray_id);
-  bool updateClosestWaypointNumberForEachLane();
+  bool updateClosestIndexForEachLane();
   int32_t findMostClosestLane(const std::vector<uint32_t> idx_vec, const geometry_msgs::Point p);
   void findCurrentLane();
   void findNeighborLanes();
