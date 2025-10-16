@@ -95,6 +95,8 @@ private:
   // the next waypoint must be outside of this threshold.
   double minimum_lookahead_distance_;
   std::string output_interface_;
+  bool use_back_;  // backward search
+  double accel_limit_, brake_limit_;
 
   // callbacks
   void callbackFromConfig(const autoware_config_msgs::ConfigWaypointFollowerConstPtr& config);
@@ -106,9 +108,9 @@ private:
   void initForROS();
 
   // functions
-  void publishControlCommands(const bool& can_get_curvature, const double& kappa) const;
-  void publishTwistStamped(const bool& can_get_curvature, const double& kappa) const;
-  void publishCtrlCmdStamped(const bool& can_get_curvature, const double& kappa) const;
+  void publishControlCommands(const bool& can_get_curvature, const double& kappa, const double& velocity) const;
+  void publishTwistStamped(const bool& can_get_curvature, const double& kappa, const double& velocity) const;
+  void publishCtrlCmdStamped(const bool& can_get_curvature, const double& kappa, const double& velocity) const;
   void publishDeviationCurrentPosition(const geometry_msgs::Point& point,
                                        const std::vector<autoware_msgs::Waypoint>& waypoints) const;
   void connectVirtualLastWaypoints(autoware_msgs::Lane* expand_lane, LaneDirection direction);
@@ -120,6 +122,7 @@ private:
   double computeCommandVelocity() const;
   double computeCommandAccel() const;
   double computeAngularGravity(double velocity, double kappa) const;
+  double limitAccelBrake(double target_vel, double prev_vel, double dt, double max_accel, double max_brake);
 };
 
 double convertCurvatureToSteeringAngle(const double& wheel_base, const double& kappa);

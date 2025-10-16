@@ -15,6 +15,10 @@
  */
 
 #include "waypoint_planner/astar_avoid/astar_avoid.h"
+#include <cmath>
+#include "amathutils_lib/amathutils.hpp"
+#include "libwaypoint_follower/libwaypoint_follower.h"
+#include "ros/console.h"
 
 AstarAvoid::AstarAvoid() : nh_(), private_nh_("~")
 {
@@ -22,6 +26,7 @@ AstarAvoid::AstarAvoid() : nh_(), private_nh_("~")
   private_nh_.param<double>("update_rate", update_rate_, 10.0);
 
   private_nh_.param<bool>("enable_avoidance", enable_avoidance_, false);
+  private_nh_.param<bool>("use_back", use_back_, true);
   private_nh_.param<double>("avoid_waypoints_velocity", avoid_waypoints_velocity_, 10.0);
   private_nh_.param<double>("avoid_start_velocity", avoid_start_velocity_, 5.0);
   private_nh_.param<double>("replan_interval", replan_interval_, 2.0);
@@ -29,8 +34,12 @@ AstarAvoid::AstarAvoid() : nh_(), private_nh_("~")
   private_nh_.param<int>("search_waypoints_delta", search_waypoints_delta_, 2);
   private_nh_.param<int>("closest_search_size", closest_search_size_, 30);
   private_nh_.param<int>("stopline_ahead_num", stopline_ahead_num_, 1);
+  private_nh_.param<double>("decel_limit", decel_limit_, 0.1);
+  private_nh_.param<double>("accel_limit", accel_limit_, 0.5);
+  private_nh_.param<double>("vel_min", vel_min_, 0.72);
 
   safety_waypoints_pub_ = nh_.advertise<autoware_msgs::Lane>("safety_waypoints", 1, true);
+  debug_pub_ = nh_.advertise<nav_msgs::Path>("debug", 1, true);
   costmap_sub_ = nh_.subscribe("costmap", 1, &AstarAvoid::costmapCallback, this);
   current_pose_sub_ = nh_.subscribe("current_pose", 1, &AstarAvoid::currentPoseCallback, this);
   current_velocity_sub_ = nh_.subscribe("current_velocity", 1, &AstarAvoid::currentVelocityCallback, this);
@@ -80,13 +89,13 @@ void AstarAvoid::baseWaypointsCallback(const autoware_msgs::Lane& msg)
 
 void AstarAvoid::closestWaypointCallback(const std_msgs::Int32& msg)
 {
-  closest_waypoint_index_ = msg.data;
-  closest_waypoint_initialized_ = true;
+  base_index_ = msg.data;
+  base_index_initialized_ = true;
 }
 
 void AstarAvoid::obstacleWaypointCallback(const std_msgs::Int32& msg)
 {
-  obstacle_waypoint_index_ = msg.data;
+  obstacle_index_ = msg.data;
 }
 
 void AstarAvoid::run()
@@ -107,7 +116,7 @@ void AstarAvoid::run()
   ros::WallTime start_avoid_time = ros::WallTime::now();
 
   // reset obstacle index
-  obstacle_waypoint_index_ = -1;
+  obstacle_index_ = -1;
 
   // relaying mode at startup
   state_ = AstarAvoid::STATE::RELAYING;
@@ -128,8 +137,18 @@ void AstarAvoid::run()
     }
 
     // avoidance mode
-    bool found_obstacle = (obstacle_waypoint_index_ >= 0);
-    bool avoid_velocity = (current_velocity_.twist.linear.x < avoid_start_velocity_ / 3.6);
+    bool found_obstacle = (obstacle_index_ >= 0);
+    bool avoid_velocity = (fabs(current_velocity_.twist.linear.x) < avoid_start_velocity_ / 3.6);
+
+    // Update avoiding index
+    if (select_way_ == AstarAvoid::STATE::AVOIDING)
+    {
+      avoid_index_ = updateCurrentIndex(avoid_waypoints_, current_pose_global_.pose, avoid_index_);
+    }
+    else
+    {
+      avoid_index_ = -1;
+    }
 
     // update state
     if (state_ == AstarAvoid::STATE::RELAYING)
@@ -162,40 +181,39 @@ void AstarAvoid::run()
       {
         ROS_INFO("STOPPING -> PLANNING, Start A* planning");
         state_ = AstarAvoid::STATE::PLANNING;
+        select_way_ = AstarAvoid::STATE::RELAYING;
       }
     }
     else if (state_ == AstarAvoid::STATE::PLANNING)
     {
       start_plan_time = ros::WallTime::now();
-      if (select_way_ == AstarAvoid::STATE::AVOIDING)
-      {
-        ROS_INFO("Found obstacle while AVOIDING -> replanning");
-      }
-      if (planAvoidWaypoints(avoid_finish_index_))
+      if (planAvoidWaypoints(avoid_path_size_))
       {
         ROS_INFO("PLANNING -> AVOIDING, Found path");
         state_ = AstarAvoid::STATE::AVOIDING;
+        select_way_ = AstarAvoid::STATE::AVOIDING;
         start_avoid_time = ros::WallTime::now();
       }
       else
       {
         ROS_INFO("PLANNING -> STOPPING, Cannot find path");
         state_ = AstarAvoid::STATE::STOPPING;
+        select_way_ = AstarAvoid::STATE::RELAYING;
+        avoid_index_ = -1;
       }
     }
     else if (state_ == AstarAvoid::STATE::AVOIDING)
     {
       // Check if goal reached
-      if (avoid_waypoint_index_ >= avoid_finish_index_)
+      if (avoid_index_ >= avoid_path_size_)
       {
         ROS_INFO("AVOIDING -> RELAYING, Reached goal");
-        base_waypoint_index_ = base_finish_index_;
         state_ = AstarAvoid::STATE::RELAYING;
         select_way_ = AstarAvoid::STATE::RELAYING;
+        avoid_index_ = -1;
       }
       else
       {
-        select_way_ = AstarAvoid::STATE::AVOIDING;
         if (found_obstacle && avoid_velocity)
         {
           bool replan = ((ros::WallTime::now() - start_avoid_time).toSec() > replan_interval_);
@@ -214,7 +232,7 @@ void AstarAvoid::run()
 bool AstarAvoid::checkInitialized()
 {
   // check for relay mode
-  bool initialized = current_pose_initialized_ && closest_waypoint_initialized_ && base_waypoints_initialized_;
+  bool initialized = current_pose_initialized_ && base_index_initialized_ && base_waypoints_initialized_;
 
   if (!initialized)
   {
@@ -222,7 +240,7 @@ bool AstarAvoid::checkInitialized()
     {
       ROS_WARN_THROTTLE(5, "Waiting for current_pose topic ...");
     }
-    if (!closest_waypoint_initialized_)
+    if (!base_index_initialized_)
     {
       ROS_WARN_THROTTLE(5, "Waiting for closest_waypoint topic ...");
     }
@@ -257,17 +275,17 @@ bool AstarAvoid::planAvoidWaypoints(int& end_of_avoid_index)
 {
   bool found_path = false;
 
-  if (base_waypoint_index_ == -1)
+  if (base_index_ < 0 || base_index_ >= static_cast<int>(base_waypoints_.waypoints.size()))
   {
+    ROS_ERROR("Invalid base_index_ = %d", base_index_);
     return false;
   }
 
   auto it =
-      base_waypoint_index_ + obstacle_waypoint_index_ + stopline_ahead_num_ + 1 >
-              static_cast<int>(base_waypoints_.waypoints.size()) ?
+      base_index_ + obstacle_index_ + stopline_ahead_num_ + 1 > static_cast<int>(base_waypoints_.waypoints.size()) ?
           base_waypoints_.waypoints.end() :
-          base_waypoints_.waypoints.begin() + base_waypoint_index_ + obstacle_waypoint_index_ + stopline_ahead_num_ + 1;
-  if (std::find_if(base_waypoints_.waypoints.begin() + base_waypoint_index_, it, [](const autoware_msgs::Waypoint& wp) {
+          base_waypoints_.waypoints.begin() + base_index_ + obstacle_index_ + stopline_ahead_num_ + 1;
+  if (std::find_if(base_waypoints_.waypoints.begin() + base_index_, it, [](const autoware_msgs::Waypoint& wp) {
         return wp.wpstate.stop_state == autoware_msgs::WaypointState::TYPE_STOPLINE;
       }) != it)
   {
@@ -277,21 +295,21 @@ bool AstarAvoid::planAvoidWaypoints(int& end_of_avoid_index)
   std::vector<geometry_msgs::Pose> goal_poses;
   std::vector<int> goal_indices;
 
-  for (int i = search_waypoints_delta_; i < static_cast<int>(search_waypoints_size_); i += search_waypoints_delta_)
+  for (int i = closest_search_size_; i < static_cast<int>(search_waypoints_size_); i += search_waypoints_delta_)
   {
     // update goal index
-    // Note: obstacle_waypoint_index_ is supposed to be relative to base_waypoint_index_.
-    //       However, obstacle_waypoint_index_ is published by velocity_set node. The astar_avoid and velocity_set
+    // Note: obstacle_index_ is supposed to be relative to base_waypoint_index_.
+    //       However, obstacle_index_ is published by velocity_set node. The astar_avoid and velocity_set
     //       should be combined together to prevent this kind of inconsistency.
-    int goal_waypoint_index = base_waypoint_index_ + obstacle_waypoint_index_ + i;
-    if (goal_waypoint_index >= static_cast<int>(base_waypoints_.waypoints.size()))
+    int goal_index = base_index_ + obstacle_index_ + i;
+    if (goal_index >= static_cast<int>(base_waypoints_.waypoints.size()))
     {
       break;
     }
-    auto it2 = goal_waypoint_index + stopline_ahead_num_ + 1 > static_cast<int>(base_waypoints_.waypoints.size()) ?
+    auto it2 = goal_index + stopline_ahead_num_ + 1 > static_cast<int>(base_waypoints_.waypoints.size()) ?
                    base_waypoints_.waypoints.end() :
-                   base_waypoints_.waypoints.begin() + goal_waypoint_index + stopline_ahead_num_ + 1;
-    auto result = std::find_if(base_waypoints_.waypoints.begin() + goal_waypoint_index - search_waypoints_delta_, it2,
+                   base_waypoints_.waypoints.begin() + goal_index + stopline_ahead_num_ + 1;
+    auto result = std::find_if(base_waypoints_.waypoints.begin() + goal_index - search_waypoints_delta_, it2,
                                [](const autoware_msgs::Waypoint& wp) {
                                  return wp.wpstate.stop_state == autoware_msgs::WaypointState::TYPE_STOPLINE;
                                });
@@ -300,206 +318,281 @@ bool AstarAvoid::planAvoidWaypoints(int& end_of_avoid_index)
       break;
     }
     // update goal pose
-    goal_pose_global_ = base_waypoints_.waypoints[goal_waypoint_index].pose;
+    goal_pose_global_ = base_waypoints_.waypoints[goal_index].pose;
     goal_pose_local_.header = costmap_.header;
     goal_pose_local_.pose = transformPose(goal_pose_global_.pose,
                                           getTransform(costmap_.header.frame_id, goal_pose_global_.header.frame_id));
     goal_poses.push_back(goal_pose_local_.pose);
-    goal_indices.push_back(goal_waypoint_index);
+    goal_indices.push_back(goal_index);
   }
 
-  if (goal_poses.size() == 0)
+  if (goal_poses.empty())
   {
-    ROS_ERROR("Can't find goal...");
+    ROS_ERROR("Can't find goal. base_index_ = %d, obstacle_index_ = %d, stopline_ahead_num_ = %d, base_size = %lu",
+              base_index_, obstacle_index_, stopline_ahead_num_, base_waypoints_.waypoints.size());
     return false;
   }
+
   // initialize costmap for A* search
   astar_.initialize(costmap_);
 
   // execute astar search
+  avoid_start_base_index_ = base_index_;
   found_path = astar_.makePlan(current_pose_local_.pose, goal_poses);
 
-  static ros::Publisher pub = nh_.advertise<nav_msgs::Path>("debug", 1, true);
-
-  if (found_path)
+  if (found_path && !astar_.getPath().poses.empty())
   {
-    pub.publish(astar_.getPath());
+    debug_pub_.publish(astar_.getPath());
     // Get reached goal index
-    avoid_start_index_ = base_waypoint_index_;
-    int goal_waypoint_index = goal_indices.at(astar_.getGoalIndex());
-    mergeAvoidWaypoints(astar_.getPath(), avoid_start_index_, goal_waypoint_index, end_of_avoid_index);
-    if (avoid_waypoints_.waypoints.size() > 0)
+    avoid_finish_base_index_ = goal_indices.at(astar_.getGoalIndex());
+    mergeAvoidWaypoints(astar_.getPath(), avoid_start_base_index_, avoid_finish_base_index_, end_of_avoid_index);
+    if (!avoid_waypoints_.waypoints.empty())
     {
-      base_finish_index_ = goal_waypoint_index;
-      avoid_waypoint_index_ = avoid_start_index_;
-      ROS_INFO("Found GOAL at goal_waypoint_index = %d", goal_waypoint_index);
+      avoid_index_ = avoid_start_base_index_;
+      ROS_INFO("Found GOAL at goal_index = %d, current_index = %d, path_size = %lu", avoid_finish_base_index_,
+               avoid_start_base_index_, astar_.getPath().poses.size());
       astar_.reset();
       return true;
     }
     else
     {
+      ROS_ERROR("Wrong path detected. goal_index = %d, waypoints size = %lu", avoid_finish_base_index_,
+                avoid_waypoints_.waypoints.size());
       found_path = false;
     }
   }
-  astar_.reset();
 
-  ROS_ERROR("Can't find goal...");
+  ROS_ERROR("Can't find goal. Retry. base_index_ = %d, obstacle_index_ = %d, stopline_ahead_num_ = %d, base_size = %lu",
+            base_index_, obstacle_index_, stopline_ahead_num_, base_waypoints_.waypoints.size());
+  astar_.reset();
   return false;
 }
 
 void AstarAvoid::mergeAvoidWaypoints(const nav_msgs::Path& path, const int start_index, const int goal_index,
                                      int& end_of_avoid_index)
 {
-  if (start_index == -1 || goal_index == -1)
+  int start_index_in = start_index;
+  if (goal_index == -1 || goal_index < start_index)
   {
     return;
+  }
+  else if (start_index == -1)
+  {
+    start_index_in = 0;
   }
 
   // add waypoints before start index
   avoid_waypoints_.waypoints.clear();
-  for (int i = 0; i < start_index; ++i)
+  for (int i = 0; i < start_index_in; ++i)
   {
     avoid_waypoints_.waypoints.push_back(base_waypoints_.waypoints.at(i));
   }
 
   // set waypoints for avoiding
-  for (const auto& pose : path.poses)
+  if (use_back_)
   {
-    autoware_msgs::Waypoint wp;
-    wp.pose.header = base_waypoints_.header;
-    wp.pose.pose = transformPose(pose.pose, getTransform(base_waypoints_.header.frame_id, pose.header.frame_id));
-    wp.pose.pose.position.z = current_pose_global_.pose.position.z;  // height = const
-    wp.twist.twist.linear.x = avoid_waypoints_velocity_ / 3.6;       // velocity = const
-    avoid_waypoints_.waypoints.push_back(wp);
+    int direction = 1;
+    for (auto next_pose : path.poses)
+    {
+      autoware_msgs::Waypoint wp;
+      wp.pose.header = base_waypoints_.header;
+      // if the next_pose.pose.position.z value is smaller than 0, it means that the path is backward
+      direction = (next_pose.pose.position.z < 0) ? -1 : 1;
+      next_pose.pose.position.z = 0;
+      wp.pose.pose =
+          transformPose(next_pose.pose, getTransform(base_waypoints_.header.frame_id, next_pose.header.frame_id));
+      wp.pose.pose.position.z = current_pose_global_.pose.position.z;         // height = const
+      wp.twist.twist.linear.x = direction * avoid_waypoints_velocity_ / 3.6;  // velocity = const
+      avoid_waypoints_.waypoints.push_back(wp);
+    }
+  }
+  else
+  {
+    for (const auto& pose : path.poses)
+    {
+      autoware_msgs::Waypoint wp;
+      wp.pose.header = base_waypoints_.header;
+      wp.pose.pose = transformPose(pose.pose, getTransform(base_waypoints_.header.frame_id, pose.header.frame_id));
+      wp.pose.pose.position.z = current_pose_global_.pose.position.z;  // height = const
+      wp.twist.twist.linear.x = avoid_waypoints_velocity_ / 3.6;       // velocity = const
+      avoid_waypoints_.waypoints.push_back(wp);
+    }
   }
 
   // add waypoints after goal index
-  for (int i = goal_index; i < static_cast<int>(base_waypoints_.waypoints.size()); ++i)
+  for (int i = goal_index + 1; i < static_cast<int>(base_waypoints_.waypoints.size()); ++i)
   {
     avoid_waypoints_.waypoints.push_back(base_waypoints_.waypoints.at(i));
   }
 
+  // smoothing connection point
+  limitPathAccel(avoid_waypoints_, accel_limit_, decel_limit_, (vel_min_ / 3.6));
   // update index for merged waypoints
-  end_of_avoid_index = start_index + path.poses.size();
+  end_of_avoid_index = start_index_in + path.poses.size() + 1;
 }
 
 void AstarAvoid::publishWaypoints(const ros::TimerEvent& e)
 {
   // select waypoints
-  autoware_msgs::Lane current_waypoints_;
-  int current_index, next_index;
+  autoware_msgs::Lane current_waypoints;
+  int current_index;
   if (select_way_ == AstarAvoid::STATE::AVOIDING)
   {
-    current_waypoints_ = avoid_waypoints_;
-    current_index = avoid_waypoint_index_;
+    current_waypoints = avoid_waypoints_;
+    current_index = avoid_index_;
   }
   else
   {
-    current_waypoints_ = base_waypoints_;
-    current_index = base_waypoint_index_;
+    current_waypoints = base_waypoints_;
+    current_index = base_index_;
   }
-
-  // Update the current point in the selected lane.
-  next_index = updateClosestIndex(current_waypoints_, current_index, current_pose_global_.pose, closest_search_size_);
-
-  if (next_index == -1)
+  if (current_index < 0 || current_index >= static_cast<int>(current_waypoints.waypoints.size()))
   {
-    avoid_waypoint_index_ = -1;
-    base_waypoint_index_ = -1;
+    ROS_WARN("Invalid index: %d (between 0 and %d)", current_index,
+             static_cast<int>(current_waypoints.waypoints.size()));
+    select_way_ = AstarAvoid::STATE::RELAYING;
+    state_ = AstarAvoid::STATE::STOPPING;
     return;
   }
 
   // Create local path starting at closest global waypoint
-  autoware_msgs::Lane safety_waypoints;
-  safety_waypoints.header = current_waypoints_.header;
-  safety_waypoints.increment = current_waypoints_.increment;
-
-  for (int i = next_index;
-       i < next_index + safety_waypoints_size_ && i < static_cast<int>(current_waypoints_.waypoints.size()); ++i)
+  autoware_msgs::Lane local_waypoints;
+  local_waypoints.header = current_waypoints.header;
+  local_waypoints.increment = current_waypoints.increment;
+  for (int i = current_index;
+       i < current_index + safety_waypoints_size_ && i < static_cast<int>(current_waypoints.waypoints.size()); ++i)
   {
-    safety_waypoints.waypoints.push_back(current_waypoints_.waypoints[i]);
+    local_waypoints.waypoints.push_back(current_waypoints.waypoints[i]);
   }
 
-  if (!safety_waypoints.waypoints.empty())
+  if (!local_waypoints.waypoints.empty())
   {
-    safety_waypoints_pub_.publish(safety_waypoints);
-  }
-
-  // Update index
-  if (select_way_ == AstarAvoid::STATE::AVOIDING)
-  {
-    avoid_waypoint_index_ = next_index;
-    // Update base_waypoint_index_ to match the amount of progress made by avoid_waypoint_index_.
-    if (avoid_finish_index_ != avoid_start_index_)
-    {
-      base_waypoint_index_ = avoid_start_index_ + (int)((avoid_waypoint_index_ - avoid_start_index_) *
-                                                        (base_finish_index_ - avoid_start_index_) /
-                                                        (avoid_finish_index_ - avoid_start_index_));
-    }
-    else
-    {
-      base_waypoint_index_ = avoid_waypoint_index_;
-    }
+    safety_waypoints_pub_.publish(local_waypoints);
   }
   else
   {
-    avoid_waypoint_index_ = next_index;
-    base_waypoint_index_ = next_index;
+    ROS_WARN("No waypoints to publish");
+    select_way_ = AstarAvoid::STATE::RELAYING;
+    state_ = AstarAvoid::STATE::STOPPING;
   }
 }
 
 tf::Transform AstarAvoid::getTransform(const std::string& from, const std::string& to)
 {
   tf::StampedTransform stf;
+  if (from.empty() || to.empty())
+  {
+    ROS_ERROR("Invalid frame_id: form = %s, to = %s", from.c_str(), to.c_str());
+    return stf;
+  }
   try
   {
     tf_listener_.lookupTransform(from, to, ros::Time(0), stf);
   }
-  catch (tf::TransformException ex)
+  catch (const tf::TransformException& ex)
   {
     ROS_ERROR("%s", ex.what());
+    ROS_ERROR("Failed to get transform from %s to %s", from.c_str(), to.c_str());
   }
   return stf;
 }
 
-int AstarAvoid::updateClosestIndex(const autoware_msgs::Lane& waypoints, const int previous_index,
-                                   const geometry_msgs::Pose& pose, const int& search_size)
+void AstarAvoid::limitPathAccel(autoware_msgs::Lane& path, double accel, double decel, double vel_min)
 {
-  int next_index = previous_index;
-  // search in all waypoints if lane_select judges you're not on waypoints
-  if (previous_index == -1)
+  if (path.waypoints.size() < 2)
   {
-    ROS_WARN("[AstarAvoid::updateClosestWaypoint] previous_index == -1, -> STOPPING");
-    state_ = AstarAvoid::STATE::STOPPING;
-    select_way_ = AstarAvoid::STATE::RELAYING;
-    next_index = closest_waypoint_index_;
-    base_waypoint_index_ = closest_waypoint_index_;
-    avoid_waypoint_index_ = closest_waypoint_index_;
+    return;
   }
-  else
-  {
-    // search within a limited area around previous_index found in the previous loop.
-    const int start_index = std::max(0, previous_index - search_size / 2);
-    const int end_index = std::min(start_index + search_size, static_cast<int>(waypoints.waypoints.size()));
 
-    // consists of search_size/2 waypoints before and after the vehicle.
-    autoware_msgs::Lane local_waypoints;
-    local_waypoints.waypoints = std::vector<autoware_msgs::Waypoint>(waypoints.waypoints.begin() + start_index,
-                                                                     waypoints.waypoints.begin() + end_index);
-    int closest_local_index = getClosestIndex(local_waypoints, pose);
-    if (closest_local_index != -1)
+  // Limit acceleration
+  double prev_vel = path.waypoints.front().twist.twist.linear.x;
+  for (size_t i = 1; i < path.waypoints.size(); ++i)
+  {
+    double dist =
+        amathutils::find_distance(path.waypoints[i - 1].pose.pose.position, path.waypoints[i].pose.pose.position);
+
+    double travel_time = 1.0;
+    if (fabs(prev_vel) > 0.0001)
     {
-      next_index = start_index + closest_local_index;
+      travel_time = dist / fabs(prev_vel);
+    }
+
+    // Calculate velocity limits based on acceleration
+    double current_vel = path.waypoints[i].twist.twist.linear.x;
+    double vel_sign = (current_vel < 0) ? -1.0 : 1.0;
+
+    // Clamp the current velocity within the calculated limits
+    double vel_limited = current_vel;
+    if (vel_sign > 0)
+    {
+      vel_limited = std::min(vel_limited, prev_vel + accel * travel_time);
+      if (vel_limited < vel_min)
+      {
+        vel_limited = vel_min;
+      }
     }
     else
     {
-      ROS_WARN("[AstarAvoid::updateClosestIndex] getClosestIndex failed, -> RELAYING");
-      state_ = AstarAvoid::STATE::RELAYING;
-      select_way_ = AstarAvoid::STATE::RELAYING;
-      next_index = closest_waypoint_index_;
-      base_waypoint_index_ = closest_waypoint_index_;
-      avoid_waypoint_index_ = closest_waypoint_index_;
+      vel_limited = std::max(vel_limited, prev_vel - accel * travel_time);
+      if (vel_limited > -vel_min)
+      {
+        vel_limited = -vel_min;
+      }
     }
+
+    // Only update the velocity if it's above vel_min to prevent unnecessary changes
+    if (std::fabs(current_vel) > vel_min)
+    {
+      path.waypoints[i].twist.twist.linear.x = vel_limited;
+    }
+
+    // Update previous velocity for the next iteration
+    prev_vel = path.waypoints[i].twist.twist.linear.x;
   }
-  return next_index;
+
+  // Limit deceleration
+  double next_vel = path.waypoints.back().twist.twist.linear.x;
+  for (int i = static_cast<int>(path.waypoints.size()) - 2; i >= 0; --i)
+  {
+    double dist =
+        amathutils::find_distance(path.waypoints[i].pose.pose.position, path.waypoints[i + 1].pose.pose.position);
+
+    double travel_time = 1.0;
+    if (fabs(next_vel) > 0.0001)
+    {
+      travel_time = dist / fabs(next_vel);
+    }
+
+    // Calculate velocity limits based on deceleration
+    double current_vel = path.waypoints[i].twist.twist.linear.x;
+    double vel_sign = (current_vel < 0) ? -1.0 : 1.0;
+
+    // Clamp the current velocity within the calculated limits
+    double vel_limited = current_vel;
+    if (vel_sign > 0)
+    {
+      vel_limited = std::min(vel_limited, next_vel + decel * travel_time);
+      if (vel_limited < vel_min)
+      {
+        vel_limited = vel_min;
+      }
+    }
+    else
+    {
+      vel_limited = std::max(vel_limited, next_vel - decel * travel_time);
+      if (vel_limited > -vel_min)
+      {
+        vel_limited = -vel_min;
+      }
+    }
+
+    // Only update the velocity if it's above vel_min to prevent unnecessary changes
+    if (std::fabs(current_vel) > vel_min)
+    {
+      path.waypoints[i].twist.twist.linear.x = vel_limited;
+    }
+
+    // Update next velocity for the next iteration
+    next_vel = path.waypoints[i].twist.twist.linear.x;
+  }
 }

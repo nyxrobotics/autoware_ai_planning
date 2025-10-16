@@ -53,6 +53,7 @@ private:
   // ros
   ros::NodeHandle nh_, private_nh_;
   ros::Publisher safety_waypoints_pub_;
+  ros::Publisher debug_pub_;
   ros::Subscriber costmap_sub_;
   ros::Subscriber current_pose_sub_;
   ros::Subscriber current_velocity_sub_;
@@ -69,6 +70,7 @@ private:
   double update_rate_;         // publishing rate [Hz]
 
   bool enable_avoidance_;            // enable avoidance mode
+  bool use_back_;                    // enable switchback action
   double avoid_waypoints_velocity_;  // constant velocity on planned waypoints [km/h]
   double avoid_start_velocity_;      // self velocity for staring avoidance behavior [km/h]
   double replan_interval_;           // replan interval for avoidance planning [Hz]
@@ -76,6 +78,9 @@ private:
   int search_waypoints_delta_;       // skipped waypoints for incremental search [-]
   int closest_search_size_;          // search closest waypoint around your car [-]
   int stopline_ahead_num_;
+  double accel_limit_;  // acceleration limit [m/s^2]
+  double decel_limit_;  // deceleration limit [m/s^2]
+  double vel_min_;      // minimum velocity [km/h]
 
   // classes
   AstarSearch astar_;
@@ -88,15 +93,14 @@ private:
   // Not the same as the waypoint gid. This value can change suddenly if the
   // current_waypoints_ switches between base_waypoints_ and avoid_waypoints_.
   State select_way_;
-  int closest_waypoint_index_ = -1;
-  int avoid_waypoint_index_ = -1;
-  int avoid_start_index_ = -1;
-  int avoid_finish_index_ = -1;
-  int base_waypoint_index_ = -1;
-  int base_finish_index_ = -1;
+  int base_index_ = -1;
+  int avoid_index_ = -1;
+  int avoid_start_base_index_ = -1;
+  int avoid_path_size_ = -1;
+  int avoid_finish_base_index_ = -1;
 
   // Index of the obstacle relative to current_waypoint_index_.
-  int obstacle_waypoint_index_ = -1;
+  int obstacle_index_ = -1;
   nav_msgs::OccupancyGrid costmap_;
   autoware_msgs::Lane base_waypoints_;
   autoware_msgs::Lane avoid_waypoints_;
@@ -109,7 +113,7 @@ private:
   bool current_pose_initialized_ = false;
   bool current_velocity_initialized_ = false;
   bool base_waypoints_initialized_ = false;
-  bool closest_waypoint_initialized_ = false;
+  bool base_index_initialized_ = false;
 
   // functions, callback
   void costmapCallback(const nav_msgs::OccupancyGrid& msg);
@@ -125,12 +129,9 @@ private:
   void mergeAvoidWaypoints(const nav_msgs::Path& path, const int start_index, const int goal_index,
                            int& end_of_avoid_index);
   tf::Transform getTransform(const std::string& from, const std::string& to);
-
-  // Find closest waypoint index within a search_size around the previous closest waypoint
-  int updateClosestIndex(const autoware_msgs::Lane& waypoints, const int previous_index,
-                         const geometry_msgs::Pose& pose, const int& search_size);
   // publish safety waypoints using a timer
   void publishWaypoints(const ros::TimerEvent& e);
+  void limitPathAccel(autoware_msgs::Lane& path, double accel, double decel, double vel_min);
 };
 
 #endif
