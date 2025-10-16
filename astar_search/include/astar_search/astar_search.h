@@ -28,7 +28,7 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <geometry_msgs/PoseArray.h>
 #include <nav_msgs/Path.h>
-
+#include <unordered_set>
 #include "astar_search/astar_util.h"
 
 class AstarSearch
@@ -39,7 +39,10 @@ public:
   AstarSearch();
   ~AstarSearch();
   void initialize(const nav_msgs::OccupancyGrid& costmap);
+  bool makePlan(const geometry_msgs::Pose& start_pose, const geometry_msgs::Pose& goal_pose);
   bool makePlan(const geometry_msgs::Pose& start_pose, const std::vector<geometry_msgs::Pose>& goal_pose);
+  bool makePlan(const std::vector<geometry_msgs::Pose>& start_pose, const geometry_msgs::Pose& goal_pose);
+  bool makePlan(const std::vector<geometry_msgs::Pose>& start_pose, const std::vector<geometry_msgs::Pose>& goal_pose);
   void reset();
 
   const nav_msgs::Path& getPath() const
@@ -50,6 +53,10 @@ public:
   {
     return reached_goal_index_;
   }
+  int getStartIndex() const
+  {
+    return reached_start_index_;
+  }
 
 private:
   void createStateUpdateTable();
@@ -59,7 +66,7 @@ private:
   bool isOutOfRange(int index_x, int index_y);
   void setPath(const SimpleNode& goal);
   bool setStartNode(const geometry_msgs::Pose& start_pose);
-  bool setGoalNode(const std::vector<geometry_msgs::Pose>& goal_pose);
+  bool setGoalNode(const geometry_msgs::Pose& goal_pose);
   bool isGoal(double x, double y, double theta);
   bool isObs(int index_x, int index_y);
   bool detectCollision(const SimpleNode& sn);
@@ -82,10 +89,10 @@ private:
   double minimum_turning_radius_;  // [m]
 
   // search configs
-  int theta_size_;                  // descritized angle table size [-]
-  double curve_weight_;             // curve moving cost [-]
-  double reverse_weight_;           // backward moving cost [-]
-  double switch_back_cost_; 
+  int theta_size_;         // descritized angle table size [-]
+  double curve_weight_;    // curve moving cost [-]
+  double reverse_weight_;  // backward moving cost [-]
+  double switch_back_cost_;
   double lateral_goal_range_;       // reaching threshold, lateral error [m]
   double longitudinal_goal_range_;  // reaching threshold, longitudinal error [m]
   double angle_goal_range_;         // reaching threshold, angle error [deg]
@@ -109,12 +116,14 @@ private:
   nav_msgs::OccupancyGrid costmap_;
 
   // pose in costmap frame
-  geometry_msgs::Pose start_pose_local_;
+  std::vector<geometry_msgs::Pose> start_pose_local_;
   std::vector<geometry_msgs::Pose> goal_pose_local_;
 
   // result path
   nav_msgs::Path path_;
+  std::vector<int> start_indices_;
   std::vector<int> goal_indices_;
+  int reached_start_index_;
   int reached_goal_index_;
 };
 

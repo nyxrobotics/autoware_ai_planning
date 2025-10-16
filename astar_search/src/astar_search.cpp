@@ -199,39 +199,172 @@ void AstarSearch::initialize(const nav_msgs::OccupancyGrid& costmap)
   }
 }
 
-bool AstarSearch::makePlan(const geometry_msgs::Pose& start_pose, const std::vector<geometry_msgs::Pose>& goal_pose)
+bool AstarSearch::makePlan(const geometry_msgs::Pose& start_pose, const geometry_msgs::Pose& goal_pose)
 {
+  goal_pose_local_.clear();
+  goal_indices_.clear();
+  start_pose_local_.clear();
+  start_indices_.clear();
+  reached_start_index_ = -1;
+  reached_goal_index_ = -1;
+
   if (!setStartNode(start_pose))
   {
     ROS_DEBUG("Invalid start pose");
     return false;
   }
+
   if (!setGoalNode(goal_pose))
   {
     ROS_DEBUG("Invalid goal pose");
     return false;
   }
+
   return search();
+}
+
+bool AstarSearch::makePlan(const geometry_msgs::Pose& start_pose, const std::vector<geometry_msgs::Pose>& goal_poses)
+{
+  start_pose_local_.clear();
+  start_indices_.clear();
+  goal_pose_local_.clear();
+  goal_indices_.clear();
+  reached_start_index_ = -1;
+  reached_goal_index_ = -1;
+
+  if (!setStartNode(start_pose))
+    return false;
+
+  int ok_goal = 0;
+  for (const auto& g : goal_poses)
+  {
+    if (setGoalNode(g))
+      ++ok_goal;
+  }
+  if (ok_goal == 0)
+    return false;
+
+  if (!search())
+    return false;
+
+  reached_start_index_ = 0;
+  return true;
+}
+
+bool AstarSearch::makePlan(const std::vector<geometry_msgs::Pose>& start_poses, const geometry_msgs::Pose& goal_pose)
+{
+  goal_pose_local_.clear();
+  goal_indices_.clear();
+  start_pose_local_.clear();
+  start_indices_.clear();
+  reached_start_index_ = -1;
+  reached_goal_index_ = -1;
+
+  // base2back を関数内だけ入替
+  const double base2back_backup = robot_base2back_;
+  robot_base2back_ = robot_length_ - robot_base2back_;
+
+  // 逆探索の起点＝元ゴール
+  if (!setStartNode(goal_pose))
+  {
+    robot_base2back_ = base2back_backup;
+    return false;
+  }
+
+  // 逆探索のゴール群＝元スタート群
+  int ok_goal = 0;
+  for (const auto& sp : start_poses)
+  {
+    if (setGoalNode(sp))
+      ++ok_goal;
+  }
+  if (ok_goal == 0)
+  {
+    robot_base2back_ = base2back_backup;
+    return false;
+  }
+
+  const bool ok = search();
+  robot_base2back_ = base2back_backup;
+  if (!ok)
+    return false;
+
+  // 逆探索では reached_goal_index_ が「到達した元スタート」のインデックス
+  reached_start_index_ = reached_goal_index_;
+
+  // 結果は元ゴール→最適スタートなので順序だけ反転（z 符号は反転しない）
+  std::reverse(path_.poses.begin(), path_.poses.end());
+  return true;
+}
+
+bool AstarSearch::makePlan(const std::vector<geometry_msgs::Pose>& start_poses,
+                           const std::vector<geometry_msgs::Pose>& goal_poses)
+{
+  goal_pose_local_.clear();
+  goal_indices_.clear();
+  start_pose_local_.clear();
+  start_indices_.clear();
+  reached_start_index_ = -1;
+  reached_goal_index_ = -1;
+
+  // 複数スタートを OPEN に投入（これにより start_pose_local_ にも push される）
+  int ok_start = 0;
+  for (const auto& s : start_poses)
+    if (setStartNode(s))
+      ++ok_start;
+  if (ok_start == 0)
+    return false;
+
+  // 複数ゴールを登録
+  int ok_goal = 0;
+  for (const auto& g : goal_poses)
+  {
+    if (setGoalNode(g))
+      ++ok_goal;
+  }
+  if (ok_goal == 0)
+    return false;
+
+  if (!search())
+    return false;
+
+  // 実際に採択された start を path_.poses.front() から最近傍で同定
+  if (path_.poses.empty())
+    return false;
+  const auto& p0 = path_.poses.front().pose.position;
+
+  int best = -1;
+  double best_d2 = std::numeric_limits<double>::infinity();
+  for (int i = 0; i < static_cast<int>(start_poses.size()); ++i)
+  {
+    double dx = p0.x - start_poses[i].position.x;
+    double dy = p0.y - start_poses[i].position.y;
+    double d2 = dx * dx + dy * dy;
+    if (d2 < best_d2)
+    {
+      best_d2 = d2;
+      best = i;
+    }
+  }
+  reached_start_index_ = best;
+  return true;
 }
 
 bool AstarSearch::setStartNode(const geometry_msgs::Pose& start_pose)
 {
   // Get index of start pose
   int index_x, index_y, index_theta;
-  start_pose_local_ = start_pose;
-  poseToIndex(start_pose_local_, &index_x, &index_y, &index_theta);
+  poseToIndex(start_pose, &index_x, &index_y, &index_theta);
   SimpleNode start_sn(index_x, index_y, index_theta, 0, 0);
 
   // Check if start is valid
   if (isOutOfRange(index_x, index_y) || detectCollision(start_sn))
-  {
     return false;
-  }
 
   // Set start node
   AstarNode& start_node = nodes_[index_y][index_x][index_theta];
-  start_node.x = start_pose_local_.position.x;
-  start_node.y = start_pose_local_.position.y;
+  start_node.x = start_pose.position.x;
+  start_node.y = start_pose.position.y;
   start_node.theta = 2.0 * M_PI / theta_size_ * index_theta;
   start_node.gc = 0;
   start_node.move_distance = 0;
@@ -253,48 +386,31 @@ bool AstarSearch::setStartNode(const geometry_msgs::Pose& start_pose)
   // Push start node to openlist
   start_sn.cost = start_node.gc + start_node.hc;
   openlist_.push(start_sn);
+  start_pose_local_.push_back(start_pose);
+  start_indices_.push_back(start_pose_local_.size() - 1);
   return true;
 }
 
-bool AstarSearch::setGoalNode(const std::vector<geometry_msgs::Pose>& goal_pose)
-{
-  bool result = false;
-  goal_pose_local_.clear();
-  goal_indices_.clear();
-  // Set goal nodes
-  for (int i = 0; i < static_cast<int>(goal_pose.size()); i++)
+bool AstarSearch::setGoalNode(const geometry_msgs::Pose& goal_pose)
+{  // Get index of goal pose
+  int index_x, index_y, index_theta;
+  poseToIndex(goal_pose, &index_x, &index_y, &index_theta);
+  SimpleNode goal_sn(index_x, index_y, index_theta, 0, 0);
+
+  // Check if goal is valid
+  if (isOutOfRange(index_x, index_y) || detectCollision(goal_sn))
+    return false;
+
+  // Calculate wavefront heuristic cost
+  if (use_wavefront_heuristic_)
   {
-    // Get index of goal pose
-    int index_x, index_y, index_theta;
-    poseToIndex(goal_pose[i], &index_x, &index_y, &index_theta);
-    SimpleNode goal_sn(index_x, index_y, index_theta, 0, 0);
-
-    // Check if goal is valid
-    if (isOutOfRange(index_x, index_y) || detectCollision(goal_sn))
-    {
-      continue;
-    }
-
-    // Calculate wavefront heuristic cost
-    if (use_wavefront_heuristic_)
-    {
-      // auto start = std::chrono::system_clock::now();
-      bool wavefront_result = calcWaveFrontHeuristic(goal_sn);
-      // auto end = std::chrono::system_clock::now();
-      // auto usec = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-      // std::cout << "wavefront : " << usec / 1000.0 << "[msec]" << std::endl;
-
-      if (!wavefront_result)
-      {
-        ROS_DEBUG("Reachable is false...");
-        continue;
-      }
-    }
-    goal_pose_local_.push_back(goal_pose[i]);
-    goal_indices_.push_back(i);
-    result = true;
+    bool wavefront_result = calcWaveFrontHeuristic(goal_sn);
+    if (!wavefront_result)
+      return false;
   }
-  return result;
+  goal_pose_local_.push_back(goal_pose);
+  goal_indices_.push_back(goal_pose_local_.size() - 1);
+  return true;
 }
 
 void AstarSearch::poseToIndex(const geometry_msgs::Pose& pose, int* index_x, int* index_y, int* index_theta)
@@ -568,53 +684,38 @@ bool AstarSearch::isGoal(double x, double y, double theta)
 
 bool AstarSearch::isObs(int index_x, int index_y)
 {
-  if (nodes_[index_y][index_x][0].status == STATUS::OBS)
-  {
-    return true;
-  }
-
-  return false;
+  return nodes_[index_y][index_x][0].status == STATUS::OBS;
 }
 
 bool AstarSearch::detectCollision(const SimpleNode& sn)
 {
-  // Define the robot as rectangle
-  static double left = -1.0 * robot_base2back_;
-  static double right = robot_length_ - robot_base2back_;
-  static double top = robot_width_ / 2.0;
-  static double bottom = -1.0 * robot_width_ / 2.0;
-  static double resolution = costmap_.info.resolution;
+  const double left = -robot_base2back_;
+  const double right = robot_length_ - robot_base2back_;
+  const double top = robot_width_ / 2.0;
+  const double bottom = -robot_width_ / 2.0;
+  const double resolution = costmap_.info.resolution;
 
-  // Coordinate of base_link in OccupancyGrid frame
   static double one_angle_range = 2.0 * M_PI / theta_size_;
   double base_x = sn.index_x * resolution;
   double base_y = sn.index_y * resolution;
   double base_theta = sn.index_theta * one_angle_range;
 
-  // Calculate cos and sin in advance
   double cos_theta = std::cos(base_theta);
   double sin_theta = std::sin(base_theta);
 
-  // Convert each point to index and check if the node is Obstacle
   for (double x = left; x < right; x += resolution)
   {
     for (double y = top; y > bottom; y -= resolution)
     {
-      // 2D point rotation
       int index_x = (x * cos_theta - y * sin_theta + base_x) / resolution;
       int index_y = (x * sin_theta + y * cos_theta + base_y) / resolution;
 
       if (isOutOfRange(index_x, index_y))
-      {
         return true;
-      }
       else if (nodes_[index_y][index_x][0].status == STATUS::OBS)
-      {
         return true;
-      }
     }
   }
-
   return false;
 }
 
@@ -640,56 +741,54 @@ bool AstarSearch::calcWaveFrontHeuristic(const SimpleNode& sn)
     getWaveFrontNode(-1, -1, std::hypot(resolution, resolution)),
     getWaveFrontNode(1, -1, std::hypot(resolution, resolution)),
   };
-
-  // Get start index
-  int start_index_x;
-  int start_index_y;
-  int start_index_theta;
-  poseToIndex(start_pose_local_, &start_index_x, &start_index_y, &start_index_theta);
-
   // Whether the robot can reach goal
   bool reachable = false;
+  for (const auto& sp : start_pose_local_)
+  {  // Get start index
+    int start_index_x;
+    int start_index_y;
+    int start_index_theta;
+    poseToIndex(sp, &start_index_x, &start_index_y, &start_index_theta);
 
-  // Start wavefront search
-  while (!qu.empty())
-  {
-    WaveFrontNode ref = qu.front();
-    qu.pop();
-
-    WaveFrontNode next;
-    for (const auto& u : updates)
+    // Start wavefront search
+    while (!qu.empty())
     {
-      next.index_x = ref.index_x + u.index_x;
-      next.index_y = ref.index_y + u.index_y;
+      WaveFrontNode ref = qu.front();
+      qu.pop();
 
-      // out of range OR already visited OR obstacle node
-      if (isOutOfRange(next.index_x, next.index_y) || nodes_[next.index_y][next.index_x][0].hc > 0 ||
-          nodes_[next.index_y][next.index_x][0].status == STATUS::OBS)
+      WaveFrontNode next;
+      for (const auto& u : updates)
       {
-        continue;
+        next.index_x = ref.index_x + u.index_x;
+        next.index_y = ref.index_y + u.index_y;
+
+        // out of range OR already visited OR obstacle node
+        if (isOutOfRange(next.index_x, next.index_y) || nodes_[next.index_y][next.index_x][0].hc > 0 ||
+            nodes_[next.index_y][next.index_x][0].status == STATUS::OBS)
+        {
+          continue;
+        }
+
+        // Take the size of robot into account
+        if (detectCollisionWaveFront(next))
+        {
+          continue;
+        }
+
+        // Check if we can reach from start to goal
+        if (next.index_x == start_index_x && next.index_y == start_index_y)
+        {
+          reachable = true;
+        }
+
+        // Set wavefront heuristic cost
+        next.hc = ref.hc + u.hc;
+        nodes_[next.index_y][next.index_x][0].hc = next.hc;
+        qu.push(next);
       }
-
-      // Take the size of robot into account
-      if (detectCollisionWaveFront(next))
-      {
-        continue;
-      }
-
-      // Check if we can reach from start to goal
-      if (next.index_x == start_index_x && next.index_y == start_index_y)
-      {
-        reachable = true;
-      }
-
-      // Set wavefront heuristic cost
-      next.hc = ref.hc + u.hc;
-      nodes_[next.index_y][next.index_x][0].hc = next.hc;
-
-      qu.push(next);
     }
   }
 
-  // End of search
   return reachable;
 }
 
@@ -731,8 +830,6 @@ void AstarSearch::reset()
   std::priority_queue<SimpleNode, std::vector<SimpleNode>, std::greater<SimpleNode>> empty;
   std::swap(openlist_, empty);
 
-  // ros::WallTime begin = ros::WallTime::now();
-
   // Reset node info here ...?
   for (size_t i = 0; i < costmap_.info.height; i++)
   {
@@ -747,7 +844,8 @@ void AstarSearch::reset()
     }
   }
 
-  // ros::WallTime end = ros::WallTime::now();
-
-  // ROS_INFO("Reset time: %lf [ms]", (end - begin).toSec() * 1000);
+  start_pose_local_.clear();
+  goal_pose_local_.clear();
+  reached_start_index_ = -1;
+  reached_goal_index_ = -1;
 }
