@@ -668,7 +668,8 @@ bool AstarSearch::isGoal(double x, double y, double theta)
     // Check Pose of goal
     double goal_yaw = tf::getYaw(goal_pose_local_[goal_num].orientation);
     if (std::fabs(relative_node_point.x) < longitudinal_goal_range &&
-        std::fabs(relative_node_point.y) < lateral_goal_range)
+        std::fabs(relative_node_point.y) < lateral_goal_range &&
+        std::fabs(calcDiffOfRadian(goal_yaw, theta)) < yaw_goal_range)
     {
       reached_goal_index_ = goal_indices_.at(goal_num);
       return true;
