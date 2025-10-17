@@ -112,7 +112,6 @@ void AstarAvoid::run()
   }
 
   // main loop
-  ros::WallTime start_plan_time = ros::WallTime::now();
   ros::WallTime start_avoid_time = ros::WallTime::now();
 
   // reset obstacle index
@@ -154,7 +153,12 @@ void AstarAvoid::run()
     }
 
     // update state
-    if (request_aster_planning && (ros::WallTime::now() - start_plan_time).toSec() > replan_interval_)
+    if ((ros::WallTime::now() - start_avoid_time).toSec() < replan_interval_)
+    {
+      obstacle_index_ = -1;
+      is_move_ = !request_aster_planning;
+    }
+    else if (request_aster_planning)
     {
       ROS_INFO("Start Plan: Request A* planning");
       if (planAvoidWaypoints(avoid_path_size_))
@@ -175,7 +179,7 @@ void AstarAvoid::run()
         is_move_ = false;
         avoid_index_ = -1;
       }
-      start_plan_time = ros::WallTime::now();
+      start_avoid_time = ros::WallTime::now();
     }
     // Check if goal reached
     if (select_way_ == AstarAvoid::WayType::AVOID && is_move_ == true)
@@ -289,8 +293,7 @@ bool AstarAvoid::planAvoidWaypoints(int& end_of_avoid_index)
     // update goal pose
     goal_pose_global_ = base_waypoints_.waypoints[goal_index].pose;
     goal_pose_local_.header = costmap_.header;
-    goal_pose_local_.pose = transformPose(goal_pose_global_.pose,
-                                          getTransform(costmap_.header.frame_id, goal_pose_global_.header.frame_id));
+    goal_pose_local_.pose = transformPose(goal_pose_global_.pose, base2avoid.inverse());
     goal_poses.push_back(goal_pose_local_.pose);
     goal_indices.push_back(goal_index);
   }
