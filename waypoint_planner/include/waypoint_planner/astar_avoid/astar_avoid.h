@@ -18,6 +18,7 @@
 #define ASTAR_AVOID_H
 
 #include <iostream>
+#include <string>
 #include <vector>
 #include <thread>
 #include <mutex>
@@ -36,14 +37,19 @@
 class AstarAvoid
 {
 public:
-  typedef enum STATE
+  enum WayType : int8_t
   {
-    INITIALIZING = -1,
-    RELAYING = 0,
-    STOPPING = 1,
-    PLANNING = 2,
-    AVOIDING = 3
-  } State;
+    RELAY = 0,
+    AVOID = 1
+  };
+
+  enum AsterPlanStatus : int8_t
+  {
+    IDLE = 0,
+    PLAN = 1,
+    SUCCESS = 2,
+    FAILURE = 3
+  };
 
   AstarAvoid();
   ~AstarAvoid() = default;
@@ -72,7 +78,7 @@ private:
   bool enable_avoidance_;            // enable avoidance mode
   bool use_back_;                    // enable switchback action
   double avoid_waypoints_velocity_;  // constant velocity on planned waypoints [km/h]
-  double avoid_start_velocity_;      // self velocity for staring avoidance behavior [km/h]
+  int plan_start_index_;             // start index for avoidance planning [-]
   double replan_interval_;           // replan interval for avoidance planning [Hz]
   int search_waypoints_size_;        // range of waypoints for incremental search [-]
   int search_waypoints_delta_;       // skipped waypoints for incremental search [-]
@@ -84,7 +90,7 @@ private:
 
   // classes
   AstarSearch astar_;
-  State state_;
+  AsterPlanStatus astar_plan_status_;
 
   // variables
   bool found_avoid_path_;
@@ -92,14 +98,16 @@ private:
   // Index of the closest waypoint in the current_waypoints_ Lane.
   // Not the same as the waypoint gid. This value can change suddenly if the
   // current_waypoints_ switches between base_waypoints_ and avoid_waypoints_.
-  State select_way_;
+  WayType select_way_;
   int base_index_ = -1;
   int avoid_index_ = -1;
   int avoid_start_base_index_ = -1;
   int avoid_path_size_ = -1;
   int avoid_finish_base_index_ = -1;
 
-  // Index of the obstacle relative to current_waypoint_index_.
+  // Index of the obstacle relative to current_waypoint_index_
+  bool is_move_;
+  bool found_obstacle_;
   int obstacle_index_ = -1;
   nav_msgs::OccupancyGrid costmap_;
   autoware_msgs::Lane base_waypoints_;
@@ -120,14 +128,16 @@ private:
   void currentPoseCallback(const geometry_msgs::PoseStamped& msg);
   void currentVelocityCallback(const geometry_msgs::TwistStamped& msg);
   void baseWaypointsCallback(const autoware_msgs::Lane& msg);
-  void closestWaypointCallback(const std_msgs::Int32& msg);
-  void obstacleWaypointCallback(const std_msgs::Int32& msg);
+  void closestIndexCallback(const std_msgs::Int32& msg);
+  void obstacleIndexCallback(const std_msgs::Int32& msg);
 
   // functions
   bool checkInitialized();
   bool planAvoidWaypoints(int& end_of_avoid_index);
   void mergeAvoidWaypoints(const nav_msgs::Path& path, const int start_index, const int goal_index,
                            int& end_of_avoid_index);
+  void mergeAvoidWaypoints(const nav_msgs::Path& path, const int start_index, const int goal_index,
+                           int& end_of_avoid_index, tf::Transform base2avoid);
   tf::Transform getTransform(const std::string& from, const std::string& to);
   // publish safety waypoints using a timer
   void publishWaypoints(const ros::TimerEvent& e);
