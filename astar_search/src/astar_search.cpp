@@ -651,14 +651,15 @@ void AstarSearch::setPath(const SimpleNode& goal)
 // Check lateral offset, longitudinal offset and angle
 bool AstarSearch::isGoal(double x, double y, double theta)
 {
-  for (int goal_num = 0; goal_num < static_cast<int>(goal_pose_local_.size()); goal_num++)
+  bool goal_reached = false;
+  for (int goal_num = static_cast<int>(goal_pose_local_.size()) - 1; goal_num >= 0; goal_num--)
   {
     // To reduce computation time, we use square value for distance
     static const double lateral_goal_range =
         lateral_goal_range_ / 2.0;  // [meter], divide by 2 means we check left and right
     static const double longitudinal_goal_range =
         longitudinal_goal_range_ / 2.0;  // [meter], check only behind of the goal
-    static const double goal_angle = M_PI * (angle_goal_range_ / 2.0) / 180.0;  // degrees -> radian
+    static const double yaw_goal_range = M_PI * (angle_goal_range_ / 2.0) / 180.0;  // degrees -> radian
 
     // Calculate the node coordinate seen from the goal point
     tf::Point p(x, y, 0);
@@ -666,16 +667,12 @@ bool AstarSearch::isGoal(double x, double y, double theta)
 
     // Check Pose of goal
     double goal_yaw = tf::getYaw(goal_pose_local_[goal_num].orientation);
-    if (relative_node_point.x < 0 &&  // shoud be behind of goal
-        std::fabs(relative_node_point.x) < longitudinal_goal_range &&
-        std::fabs(relative_node_point.y) < lateral_goal_range)
+    if (std::fabs(relative_node_point.x) < longitudinal_goal_range &&
+        std::fabs(relative_node_point.y) < lateral_goal_range &&
+        std::fabs(calcDiffOfRadian(goal_yaw, theta)) < yaw_goal_range)
     {
-      // Check the orientation of goal
-      if (calcDiffOfRadian(goal_yaw, theta) < goal_angle)
-      {
-        reached_goal_index_ = goal_indices_.at(goal_num);
-        return true;
-      }
+      reached_goal_index_ = goal_indices_.at(goal_num);
+      return true;
     }
   }
   reached_goal_index_ = 0;
