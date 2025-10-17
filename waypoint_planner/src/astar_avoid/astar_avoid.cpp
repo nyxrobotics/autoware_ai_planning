@@ -28,8 +28,8 @@ AstarAvoid::AstarAvoid() : nh_(), private_nh_("~")
   private_nh_.param<bool>("enable_avoidance", enable_avoidance_, false);
   private_nh_.param<bool>("use_back", use_back_, true);
   private_nh_.param<double>("avoid_waypoints_velocity", avoid_waypoints_velocity_, 10.0);
-  private_nh_.param<int>("plan_start_index", plan_start_index_, 40);
-  private_nh_.param<double>("replan_interval", replan_interval_, 0.5);
+  private_nh_.param<int>("plan_start_index", plan_start_index_, 100);
+  private_nh_.param<double>("replan_interval", replan_interval_, 1.0);
   private_nh_.param<int>("search_waypoints_size", search_waypoints_size_, 50);
   private_nh_.param<int>("search_waypoints_delta", search_waypoints_delta_, 2);
   private_nh_.param<int>("closest_search_size", closest_search_size_, 30);
