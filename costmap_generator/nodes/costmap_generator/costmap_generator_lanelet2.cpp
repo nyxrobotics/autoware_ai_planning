@@ -243,31 +243,73 @@ void CostmapGeneratorLanelet2::publishRosMsg(const grid_map::GridMap& costmap, c
   out_gridmap_msg.info.header = in_header;
   pub_costmap_.publish(out_gridmap_msg);
 }
+
 void CostmapGeneratorLanelet2::clearInsideRobot(grid_map::Matrix& costmap_layer)
 {
-  // Calculate the robot's internal area based on the parameters
-  double robot_half_width = robot_width_ / 2.0;           // Half of the robot's width
-  double robot_front = robot_length_ - robot_base2back_;  // Front of the robot
-  double robot_back = robot_base2back_;                   // Back of the robot
+  // Robot geometry
+  const double half_w = robot_width_ / 2.0;
+  const double front = robot_length_ - robot_base2back_;
+  const double back = robot_base2back_;
 
-  // Expand the robot's bounding box by one cell size in all directions
-  double resolution = costmap_.getResolution();  // Get the resolution of the costmap
-  double expanded_half_width = robot_half_width + resolution;
-  double expanded_front = robot_front + resolution;
-  double expanded_back = robot_back + resolution;
+  const double res = costmap_.getResolution();
 
-  // Iterate through the costmap and clear the values inside the expanded robot's area
-  for (grid_map::GridMapIterator iterator(costmap_); !iterator.isPastEnd(); ++iterator)
+  // ---- True geometric center (odd: 1 cell, even: average of 4) ----
+  const auto size = costmap_.getSize();  // [rows, cols]
+  const bool even_rows = (size[0] % 2 == 0);
+  const bool even_cols = (size[1] % 2 == 0);
+
+  const int i0 = (size[0] - 1) / 2;  // lower central row
+  const int j0 = (size[1] - 1) / 2;  // lower central col
+
+  std::vector<grid_map::Index> center_indices;
+  center_indices.emplace_back(i0, j0);
+  if (even_rows)
+    center_indices.emplace_back(i0 + 1, j0);
+  if (even_cols)
+    center_indices.emplace_back(i0, j0 + 1);
+  if (even_rows && even_cols)
+    center_indices.emplace_back(i0 + 1, j0 + 1);
+
+  grid_map::Position center_pos(0.0, 0.0);
+  for (const auto& idx : center_indices)
   {
-    // Get the 2D index
-    grid_map::Index index(*iterator);
-    grid_map::Position position;
-    costmap_.getPosition(index, position);
-    // Check if the current cell is within the expanded robot's area
-    if (position.x() > -expanded_back - resolution * 0.5 && position.x() < expanded_front + resolution * 0.5 &&
-        fabs(position.y()) < expanded_half_width + resolution * 0.5)
+    grid_map::Position p;
+    costmap_.getPosition(idx, p);
+    center_pos.x() += p.x();
+    center_pos.y() += p.y();
+  }
+  const double invN = 1.0 / static_cast<double>(center_indices.size());
+  center_pos.x() *= invN;
+  center_pos.y() *= invN;
+
+  // ---- Half-open intervals on both axes + 0.5-cell margin ----
+  const double margin = 0.5 * res;
+
+  // X forward/back bounds: include [-back - 0.5res, front + 0.5res)
+  const double x_min = -back - margin;  // included
+  const double x_max = front + margin;  // excluded
+
+  // Y left/right bounds: include [-half_w - 0.5res, half_w + 0.5res)
+  const double y_min = -half_w - margin;  // included
+  const double y_max = half_w + margin;   // excluded
+
+  // Floating-point tolerance proportional to resolution
+  const double eps = std::max(1e-12, 1e-9 * res);
+
+  for (grid_map::GridMapIterator it(costmap_); !it.isPastEnd(); ++it)
+  {
+    const grid_map::Index index(*it);
+    grid_map::Position pw;
+    costmap_.getPosition(index, pw);  // cell center (world)
+
+    // Shift to the true geometric center to remove even-size bias
+    const double px = pw.x() - center_pos.x();
+    const double py = pw.y() - center_pos.y();
+
+    // Half-open on both axes: [x_min, x_max) and [y_min, y_max)
+    if (px >= x_min - eps && px < x_max - eps && py >= y_min - eps && py < y_max - eps)
     {
-      costmap_layer(index(0), index(1)) = grid_min_value_;  // Set the cost to the minimum value
+      costmap_layer(index(0), index(1)) = grid_min_value_;
     }
   }
 }
