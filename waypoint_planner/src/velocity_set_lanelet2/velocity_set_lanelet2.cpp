@@ -698,7 +698,8 @@ int detectStopObstacle(const VelocitySetInfo& vs_info, const pcl::PointCloud<pcl
         }
       }
 
-      if (in_collision)
+      double current_index_vel = lane.waypoints[i].twist.twist.linear.x;
+      if (in_collision && current_index_vel * p.x > 0)
       {
         stop_point_count++;
         geometry_msgs::Point point_temp;
@@ -785,7 +786,8 @@ int detectDecelerateObstacle(const VelocitySetInfo& vs_info, const pcl::PointClo
         }
       }
 
-      if (in_collision)
+      double current_index_vel = lane.waypoints[i].twist.twist.linear.x;
+      if (in_collision && current_index_vel * p.x > 0 )
       {
         decelerate_point_count++;
         geometry_msgs::Point point_temp;
