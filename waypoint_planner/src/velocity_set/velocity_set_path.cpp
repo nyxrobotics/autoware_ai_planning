@@ -149,6 +149,8 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
 
   if (closest_length > epsilon)
   {
+    // Estimate accel needed to reach closest_vel from current_vel_ over closest_length.
+    // Use v^2 = v0^2 + 2 a s (same-sign), or crossing-zero form when signs differ.
     double closest_accel = 0.0;
     if (closest_vel * current_vel_ > 0.0)
     {
@@ -161,12 +163,15 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
         closest_accel = -std::abs(closest_accel);
     }
 
+    // Only limit *deceleration*; acceleration is not limited.
     const bool decel_step = (std::abs(closest_vel) < std::abs(current_vel_)) || (current_vel_ * closest_vel < 0.0);
 
     if (decel_step && std::abs(closest_accel) > std::abs(velocity_change_limit))
     {
+      // Clamp accel magnitude to the allowed change limit (keep sign)
       closest_accel = std::copysign(std::abs(velocity_change_limit), closest_accel);
 
+      // Recompute velocity at the closest waypoint from the clamped accel
       auto& v_out = updated_waypoints_.waypoints[closest_waypoint].twist.twist.linear.x;
 
       const bool same_sign = (closest_vel >= 0.0 && current_vel_ >= 0.0) || (closest_vel <= 0.0 && current_vel_ <= 0.0);
@@ -174,18 +179,20 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
       double sq_term = same_sign ? (current_vel_ * current_vel_ + 2.0 * closest_accel * closest_length) :
                                    (2.0 * closest_accel * closest_length - current_vel_ * current_vel_);
 
-      sq_term = std::max(0.0, sq_term);
+      sq_term = std::max(0.0, sq_term);  // numerical guard
       const double speed_mag = std::sqrt(sq_term);
-
       v_out = (closest_vel >= 0.0) ? speed_mag : -speed_mag;
     }
   }
 
   // --------------------------------------------------------------------------
-  // Part 2) Forward profile construction (no accel limiting; decel envelope only)
+  // Part 2) Forward profile construction
+  //   - No accel limiting: only raise sudden dips (deceleration) when there is no mandatory stop/flip.
+  //   - With a mandatory stop/flip ahead: cap by the *minimum* decel envelope that guarantees stopping.
+  //   - Iterate from the stop/flip point backwards to the current point as requested.
   // --------------------------------------------------------------------------
 
-  // Find first must-stop waypoint (near zero)
+  // Find first must-stop waypoint (near zero) ahead
   int stop_index = -1;
   for (int i = closest_waypoint; i < getNewWaypointsSize(); ++i)
   {
@@ -199,18 +206,18 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
     }
   }
 
-  // Find first direction-change waypoint ahead (sign flip versus current_vel_)
+  // Find first direction-change waypoint ahead (sign flip versus current motion)
   int dir_change_index = -1;
-  const double sign_now = (current_vel_ > 0.0) ? 1.0 : (current_vel_ < 0.0 ? -1.0 : 0.0);
-  if (sign_now != 0.0)
+  const int sign_now = (current_vel_ > 0.0) ? 1 : (current_vel_ < 0.0 ? -1 : 0);
+  if (sign_now != 0)
   {
     for (int i = closest_waypoint; i < getNewWaypointsSize(); ++i)
     {
       if (!checkWaypoint(i))
         return;
       const double v = updated_waypoints_.waypoints[i].twist.twist.linear.x;
-      const double sv = (v > 0.0) ? 1.0 : (v < 0.0 ? -1.0 : 0.0);
-      if (sv != 0.0 && sv != sign_now)
+      const int sv = (v > 0.0) ? 1 : (v < 0.0 ? -1 : 0);
+      if (sv != 0 && sv != sign_now)
       {
         dir_change_index = i;
         break;
@@ -218,66 +225,117 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
     }
   }
 
-  // Distance to nearest mandatory stop/flip
-  double stop_length = std::numeric_limits<double>::infinity();
+  // Choose nearest mandatory stop/flip target (closest from current)
+  int stop_target_index = -1;
+  double stop_dist_from_closest = std::numeric_limits<double>::infinity();
   if (stop_index != -1)
-    stop_length = std::min(stop_length, calcInterval(closest_waypoint, stop_index));
+  {
+    stop_target_index = stop_index;
+    stop_dist_from_closest = calcInterval(closest_waypoint, stop_index);
+  }
   if (dir_change_index != -1)
-    stop_length = std::min(stop_length, calcInterval(closest_waypoint, dir_change_index));
+  {
+    const double d_flip = calcInterval(closest_waypoint, dir_change_index);
+    if (d_flip < stop_dist_from_closest)
+    {
+      stop_target_index = dir_change_index;
+      stop_dist_from_closest = d_flip;
+    }
+  }
 
-  // Decel envelope magnitude
+  // Build decel envelope
   const double v0_mag_for_stop = std::abs(updated_waypoints_.waypoints[closest_waypoint].twist.twist.linear.x);
-  const bool have_mandatory_stop = std::isfinite(stop_length) && (stop_length > epsilon) && (v0_mag_for_stop > 0.0);
+  const bool have_mandatory_stop = (stop_target_index != -1) && std::isfinite(stop_dist_from_closest) &&
+                                   (stop_dist_from_closest > epsilon) && (v0_mag_for_stop > 0.0);
 
+  // Effective decel magnitude:
+  //  - normal: |velocity_change_limit|
+  //  - mandatory stop/flip: ensure enough decel to reach zero within stop_dist_from_closest
   double a_eff_mag = std::abs(velocity_change_limit);
   if (have_mandatory_stop)
   {
-    const double required_decel = (v0_mag_for_stop * v0_mag_for_stop) / (2.0 * stop_length);
+    const double required_decel = (v0_mag_for_stop * v0_mag_for_stop) / (2.0 * stop_dist_from_closest);
     a_eff_mag = std::max(a_eff_mag, required_decel);  // may exceed limit to guarantee stop
   }
 
   const double v0_mag = v0_mag_for_stop;
 
-  for (int idx = closest_waypoint; idx < getNewWaypointsSize(); ++idx)
+  if (have_mandatory_stop)
   {
-    if (!checkWaypoint(idx))
-      return;
+    // ---- Backward loop: from stop/flip -> closest (as requested) ----
+    // d_acc: distance from current idx to stop_target (accumulated while going backward)
+    // s_acc: distance from closest to current idx (= stop_dist_from_closest - d_acc)
+    double d_acc = 0.0;
 
-    double s = 0.0;
-    if (idx > closest_waypoint)
-      s = calcInterval(closest_waypoint, idx);
-
-    double v_env_mag = std::sqrt(std::max(0.0, v0_mag * v0_mag - 2.0 * a_eff_mag * s));
-
-    // Force zero at/after mandatory stop/flip
-    if ((stop_index != -1 && idx >= stop_index) || (dir_change_index != -1 && idx >= dir_change_index))
-      v_env_mag = 0.0;
-
-    const double target_vel = updated_waypoints_.waypoints[idx].twist.twist.linear.x;
-    const double target_mag = std::abs(target_vel);
-    const int sgn = (target_vel < 0.0) ? -1 : 1;
-
-    double new_mag;
-    if (have_mandatory_stop)
+    for (int idx = stop_target_index; idx >= closest_waypoint; --idx)
     {
-      // must be <= envelope to ensure stop
-      new_mag = std::min(target_mag, v_env_mag);
+      if (!checkWaypoint(idx))
+        return;
+
+      const double d_rem = d_acc;
+      const double s_acc = std::max(0.0, stop_dist_from_closest - d_rem);
+
+      // forward envelope from closest: v_fwd(s) = sqrt(max(0, v0^2 - 2 a s))
+      double v_env_mag_fwd = std::sqrt(std::max(0.0, v0_mag * v0_mag - 2.0 * a_eff_mag * s_acc));
+      // backward envelope from stop:  v_stop(d) = sqrt(max(0, 2 a d))
+      double v_env_mag_bwd = std::sqrt(std::max(0.0, 2.0 * a_eff_mag * d_rem));
+
+      // To guarantee stopping, cap by the tighter of the two
+      double v_env_mag = std::min(v_env_mag_fwd, v_env_mag_bwd);
+
+      // Force zero exactly at the stop/flip index
+      if (idx == stop_target_index)
+        v_env_mag = 0.0;
+
+      // planned target at idx
+      const double target_vel = updated_waypoints_.waypoints[idx].twist.twist.linear.x;
+      const double target_mag = std::abs(target_vel);
+      const int sgn = (target_vel < 0.0) ? -1 : 1;
+
+      // With a mandatory stop, profile must be <= envelope
+      const double new_mag = std::min(target_mag, v_env_mag);
+      const double new_vel = sgn * new_mag;
+      updated_waypoints_.waypoints[idx].twist.twist.linear.x = new_vel;
+
+      // Early exit:
+      //  - envelope zero and new velocity zero (stop), OR
+      //  - sign flips relative to current motion (treat as stop boundary)
+      const int new_sign = (new_vel > 0.0) ? 1 : (new_vel < 0.0 ? -1 : 0);
+      if ((v_env_mag <= 0.0 && new_mag <= 0.0) || (sign_now != 0 && new_sign != 0 && new_sign != sign_now))
+        break;
+
+      // accumulate remaining distance for the next (previous) index
+      if (idx > closest_waypoint)
+      {
+        d_acc += calcInterval(idx - 1, idx);  // distance from (idx-1) to current idx
+      }
     }
-    else
+  }
+  else
+  {
+    // ---- No mandatory stop/flip: forward loop; do NOT limit acceleration, only raise decel dips ----
+    double s_acc = 0.0;
+    for (int idx = closest_waypoint; idx < getNewWaypointsSize(); ++idx)
     {
-      // raise only (do not limit acceleration)
-      new_mag = std::max(target_mag, v_env_mag);
+      if (!checkWaypoint(idx))
+        return;
+      if (idx > closest_waypoint)
+        s_acc += calcInterval(idx - 1, idx);
+
+      // v_env(s) = sqrt(max(0, v0^2 - 2 * |a_limit| * s))
+      double v_env_mag = std::sqrt(std::max(0.0, v0_mag * v0_mag - 2.0 * std::abs(velocity_change_limit) * s_acc));
+
+      const double target_vel = updated_waypoints_.waypoints[idx].twist.twist.linear.x;
+      const double target_mag = std::abs(target_vel);
+      const int sgn = (target_vel < 0.0) ? -1 : 1;
+
+      // Raise only (do NOT cap acceleration)
+      const double new_mag = std::max(target_mag, v_env_mag);
+      updated_waypoints_.waypoints[idx].twist.twist.linear.x = sgn * new_mag;
+
+      if (v_env_mag <= 0.0 && new_mag <= 0.0)
+        break;
     }
-
-    const double new_vel = sgn * new_mag;
-    updated_waypoints_.waypoints[idx].twist.twist.linear.x = new_vel;
-
-    // Early exit:
-    //  - envelope reached zero AND new velocity is zero (stop), OR
-    //  - sign flips relative to the current motion (treat as stop boundary)
-    const int new_sign = (new_vel > 0.0) ? 1 : (new_vel < 0.0 ? -1 : 0);
-    if ((v_env_mag <= 0.0 && new_mag <= 0.0) || (sign_now != 0.0 && new_sign != 0 && new_sign != sign_now))
-      break;
   }
 }
 
