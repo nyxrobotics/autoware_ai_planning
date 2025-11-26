@@ -263,9 +263,7 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
   if (have_mandatory_stop)
   {
     // ---- Backward loop: from stop/flip -> closest (as requested) ----
-    // d_acc: distance from current idx to stop_target (accumulated while going backward)
-    // s_acc: distance from closest to current idx (= stop_dist_from_closest - d_acc)
-    double d_acc = 0.0;
+    double d_acc = 0.0;  // distance from current idx to stop_target (accumulated while going backward)
 
     for (int idx = stop_target_index; idx >= closest_waypoint; --idx)
     {
@@ -313,28 +311,62 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
   }
   else
   {
-    // ---- No mandatory stop/flip: forward loop; do NOT limit acceleration, only raise decel dips ----
-    double s_acc = 0.0;
-    for (int idx = closest_waypoint; idx < getNewWaypointsSize(); ++idx)
+    // ---- No mandatory stop/flip: backward pass that enforces pairwise deceleration limit only ----
+    // We do NOT limit acceleration. We only slow down earlier points if (i-1)->i would exceed decel limit.
+    const int last_idx = getNewWaypointsSize() - 1;
+
+    // If motion has a known sign, stop the pass at the first sign change ahead.
+    int end_idx = last_idx;
+    if (sign_now != 0)
     {
-      if (!checkWaypoint(idx))
+      for (int i = closest_waypoint + 1; i <= last_idx; ++i)
+      {
+        if (!checkWaypoint(i))
+          return;
+        const double v = updated_waypoints_.waypoints[i].twist.twist.linear.x;
+        const int sv = (v > 0.0) ? 1 : (v < 0.0 ? -1 : 0);
+        if (sv != 0 && sv != sign_now)
+        {
+          end_idx = i - 1;
+          break;
+        }
+      }
+    }
+
+    const double a_lim = std::abs(velocity_change_limit);
+
+    for (int i = end_idx; i > closest_waypoint; --i)
+    {
+      if (!checkWaypoint(i) || !checkWaypoint(i - 1))
         return;
-      if (idx > closest_waypoint)
-        s_acc += calcInterval(idx - 1, idx);
 
-      // v_env(s) = sqrt(max(0, v0^2 - 2 * |a_limit| * s))
-      double v_env_mag = std::sqrt(std::max(0.0, v0_mag * v0_mag - 2.0 * std::abs(velocity_change_limit) * s_acc));
+      const double ds = calcInterval(i - 1, i);
+      if (ds <= epsilon)
+        continue;
 
-      const double target_vel = updated_waypoints_.waypoints[idx].twist.twist.linear.x;
-      const double target_mag = std::abs(target_vel);
-      const int sgn = (target_vel < 0.0) ? -1 : 1;
+      const double v_next = updated_waypoints_.waypoints[i].twist.twist.linear.x;
+      const double v_curr = updated_waypoints_.waypoints[i - 1].twist.twist.linear.x;
 
-      // Raise only (do NOT cap acceleration)
-      const double new_mag = std::max(target_mag, v_env_mag);
-      updated_waypoints_.waypoints[idx].twist.twist.linear.x = sgn * new_mag;
+      // Respect sign if known; skip segments that already flip sign (handled elsewhere)
+      if (sign_now != 0)
+      {
+        const int s_next = (v_next > 0.0) ? 1 : (v_next < 0.0 ? -1 : 0);
+        const int s_curr = (v_curr > 0.0) ? 1 : (v_curr < 0.0 ? -1 : 0);
+        if ((s_next != 0 && s_next != sign_now) || (s_curr != 0 && s_curr != sign_now))
+          break;
+      }
 
-      if (v_env_mag <= 0.0 && new_mag <= 0.0)
-        break;
+      // Allowed speed magnitude at (i-1) to not exceed decel limit into i:
+      // v_{i-1} <= sqrt( v_i^2 + 2 * a_lim * ds )
+      const double v_allowed_mag = std::sqrt(std::max(0.0, v_next * v_next + 2.0 * a_lim * ds));
+
+      // If current magnitude is higher than allowed, lower it (do NOT raise = no accel limit)
+      const double v_curr_mag = std::abs(v_curr);
+      if (v_curr_mag > v_allowed_mag)
+      {
+        const int sgn = (v_curr < 0.0) ? -1 : 1;
+        updated_waypoints_.waypoints[i - 1].twist.twist.linear.x = sgn * v_allowed_mag;
+      }
     }
   }
 }
