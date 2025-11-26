@@ -129,7 +129,8 @@ void VelocitySetPath::avoidSuddenAcceleration(double deceleration, int closest_w
   return;
 }
 
-void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, double deceleration, int closest_waypoint)
+void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, double /*deceleration*/,
+                                              int closest_waypoint)
 {
   constexpr double epsilon = 1e-9;
 
@@ -138,65 +139,29 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
   if (!checkWaypoint(closest_waypoint))
     return;
 
+  // snapshot current & closest
+  const double current = current_vel_;
   const double closest_vel = updated_waypoints_.waypoints[closest_waypoint].twist.twist.linear.x;
+  const double orig_closest = closest_vel;
+  const double orig_closest_mag = std::abs(orig_closest);
+  const int sign_now = (current > 0.0) ? 1 : (current < 0.0 ? -1 : 0);
 
   // --------------------------------------------------------------------------
-  // Part 1) Apply decel limit to the closest waypoint using the next-segment length
-  //         (treat current -> closest as having the same distance as closest -> closest+1)
-  //         Acceleration is NOT limited.
+  // A) Detect mandatory stop (near-zero) or direction flip ahead
   // --------------------------------------------------------------------------
-  double closest_length = 0.0;
-  if (closest_waypoint + 1 < getNewWaypointsSize())
-    closest_length = calcInterval(closest_waypoint, closest_waypoint + 1);
-
-  if (closest_length > epsilon)
-  {
-    const double a_lim = std::abs(velocity_change_limit);
-
-    // Is this a deceleration step with respect to current_vel_?
-    const bool decel_wrt_current =
-        (std::abs(closest_vel) < std::abs(current_vel_)) || (current_vel_ * closest_vel < 0.0);
-
-    if (decel_wrt_current)
-    {
-      // v_allowed = sqrt( max(0, v_current^2 - 2 * a_lim * d) )
-      const double v0_mag = std::abs(current_vel_);
-      const double v_allowed = std::sqrt(std::max(0.0, v0_mag * v0_mag - 2.0 * a_lim * closest_length));
-
-      auto& v_out = updated_waypoints_.waypoints[closest_waypoint].twist.twist.linear.x;
-
-      // keep traveling direction same as current until sign boundary
-      const int sgn = (current_vel_ < 0.0) ? -1 : 1;
-
-      // Cap only downward (do not raise). This avoids staying at a constant speed.
-      const double new_mag = std::min(std::abs(v_out), v_allowed);
-      v_out = sgn * new_mag;
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // Part 2) Path-wide profile
-  //   - If mandatory stop/flip exists: build envelope and traverse backward from stop->closest.
-  //   - Else: enforce pairwise decel limit via backward pass, then a forward feasibility check.
-  // --------------------------------------------------------------------------
-
-  // First must-stop waypoint (near zero) ahead
   int stop_index = -1;
   for (int i = closest_waypoint; i < getNewWaypointsSize(); ++i)
   {
     if (!checkWaypoint(i))
       return;
-    const double v = updated_waypoints_.waypoints[i].twist.twist.linear.x;
-    if (std::abs(v) < 1e-3)
+    if (std::abs(updated_waypoints_.waypoints[i].twist.twist.linear.x) < 1e-3)
     {
       stop_index = i;
       break;
     }
   }
 
-  // First direction-change waypoint ahead (sign flip vs current motion)
   int dir_change_index = -1;
-  const int sign_now = (current_vel_ > 0.0) ? 1 : (current_vel_ < 0.0 ? -1 : 0);
   if (sign_now != 0)
   {
     for (int i = closest_waypoint; i < getNewWaypointsSize(); ++i)
@@ -213,7 +178,6 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
     }
   }
 
-  // Nearest mandatory stop/flip target
   int stop_target_index = -1;
   double stop_dist_from_closest = std::numeric_limits<double>::infinity();
   if (stop_index != -1)
@@ -235,20 +199,65 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
   const bool have_mandatory_stop = (stop_target_index != -1) && std::isfinite(stop_dist_from_closest) &&
                                    (stop_dist_from_closest > epsilon) && (v0_mag_for_stop > 0.0);
 
-  // Effective decel magnitude
-  double a_eff_mag = std::abs(velocity_change_limit);
-  if (have_mandatory_stop)
+  // --------------------------------------------------------------------------
+  // B) Part 1: cap the "closest" speed using the distance of (closest -> closest+1)
+  //            Treat (current -> closest) as the same distance. Only cap downward.
+  //            When no mandatory stop, avoid falling to (or being pulled up from) a very small floor.
+  // --------------------------------------------------------------------------
+  double closest_len = 0.0;
+  if (closest_waypoint + 1 < getNewWaypointsSize())
+    closest_len = calcInterval(closest_waypoint, closest_waypoint + 1);
+
+  if (closest_len > epsilon && std::abs(current) > epsilon)
   {
-    const double required_decel = (v0_mag_for_stop * v0_mag_for_stop) / (2.0 * stop_dist_from_closest);
-    a_eff_mag = std::max(a_eff_mag, required_decel);  // may exceed limit to guarantee stop
+    // deceleration w.r.t. current? (slower magnitude or crossing zero)
+    const bool decel_wrt_current = (std::abs(closest_vel) < std::abs(current)) || (current * closest_vel < 0.0);
+    if (decel_wrt_current)
+    {
+      const double a_lim = std::abs(velocity_change_limit);
+      const double v0 = std::abs(current);
+      double v_allowed = std::sqrt(std::max(0.0, v0 * v0 - 2.0 * a_lim * closest_len));
+
+      // Non-stop case: enforce a small floor to avoid sticking at zero
+      const double floor_min = std::max(1e-3, std::min(std::abs(decelerate_vel_min_), 1.0));
+      if (!have_mandatory_stop)
+      {
+        v_allowed = std::max(v_allowed, floor_min);
+      }
+
+      auto& v_out = updated_waypoints_.waypoints[closest_waypoint].twist.twist.linear.x;
+      const int sgn = (current < 0.0) ? -1 : 1;
+
+      // candidate capped magnitude (never raise)
+      const double cand_mag = std::min(std::abs(v_out), v_allowed);
+      double new_val = sgn * cand_mag;
+
+      // Preservation rule: if candidate < floor and original closest was already <= floor, keep original
+      if (!have_mandatory_stop && (v_allowed < floor_min + 1e-12) && (orig_closest_mag <= floor_min + 1e-12))
+      {
+        new_val = orig_closest;
+      }
+
+      v_out = new_val;
+    }
   }
 
-  const double v0_mag = v0_mag_for_stop;
-
+  // --------------------------------------------------------------------------
+  // C) Choose effective decel magnitude (may exceed limit when stopping is required)
+  // --------------------------------------------------------------------------
+  double a_eff = std::abs(velocity_change_limit);
   if (have_mandatory_stop)
   {
-    // ---- Backward loop: stop/flip -> closest ----
-    double d_acc = 0.0;  // distance from current idx to stop_target (accumulated backward)
+    const double required = (v0_mag_for_stop * v0_mag_for_stop) / (2.0 * stop_dist_from_closest);
+    a_eff = std::max(a_eff, required);
+  }
+
+  // --------------------------------------------------------------------------
+  // D) With mandatory stop/flip: traverse from stop_target back to closest (min of fwd/bwd envelopes)
+  // --------------------------------------------------------------------------
+  if (have_mandatory_stop)
+  {
+    double d_acc = 0.0;  // distance from idx to stop_target (accumulated backward)
 
     for (int idx = stop_target_index; idx >= closest_waypoint; --idx)
     {
@@ -258,179 +267,166 @@ void VelocitySetPath::avoidSuddenDeceleration(double velocity_change_limit, doub
       const double d_rem = d_acc;
       const double s_acc = std::max(0.0, stop_dist_from_closest - d_rem);
 
-      // forward envelope from closest: v_fwd(s) = sqrt(max(0, v0^2 - 2 a s))
-      double v_env_mag_fwd = std::sqrt(std::max(0.0, v0_mag * v0_mag - 2.0 * a_eff_mag * s_acc));
-      // backward envelope from stop:  v_stop(d) = sqrt(max(0, 2 a d))
-      double v_env_mag_bwd = std::sqrt(std::max(0.0, 2.0 * a_eff_mag * d_rem));
+      const double v_fwd = std::sqrt(std::max(0.0, v0_mag_for_stop * v0_mag_for_stop - 2.0 * a_eff * s_acc));
+      const double v_bwd = std::sqrt(std::max(0.0, 2.0 * a_eff * d_rem));
+      double v_env = std::min(v_fwd, v_bwd);
 
-      // To guarantee stopping, cap by the tighter of the two
-      double v_env_mag = std::min(v_env_mag_fwd, v_env_mag_bwd);
-
-      // Force zero exactly at the stop/flip index
       if (idx == stop_target_index)
-        v_env_mag = 0.0;
+        v_env = 0.0;
 
-      // planned target at idx
-      const double target_vel = updated_waypoints_.waypoints[idx].twist.twist.linear.x;
-      const double target_mag = std::abs(target_vel);
-      const int sgn = (target_vel < 0.0) ? -1 : 1;
+      double& v_tar = updated_waypoints_.waypoints[idx].twist.twist.linear.x;
+      const int sgn = (v_tar < 0.0) ? -1 : 1;
+      v_tar = sgn * std::min(std::abs(v_tar), v_env);
 
-      // With a mandatory stop, profile must be <= envelope
-      const double new_mag = std::min(target_mag, v_env_mag);
-      const double new_vel = sgn * new_mag;
-      updated_waypoints_.waypoints[idx].twist.twist.linear.x = new_vel;
-
-      // Early exit:
-      //  - envelope zero and new velocity zero (stop), OR
-      //  - sign flips relative to current motion (treat as stop boundary)
-      const int new_sign = (new_vel > 0.0) ? 1 : (new_vel < 0.0 ? -1 : 0);
-      if ((v_env_mag <= 0.0 && new_mag <= 0.0) || (sign_now != 0 && new_sign != 0 && new_sign != sign_now))
-        break;
-
-      // accumulate remaining distance for the next (previous) index
       if (idx > closest_waypoint)
-      {
         d_acc += calcInterval(idx - 1, idx);
-      }
     }
+    return;
   }
-  else
+
+  // --------------------------------------------------------------------------
+  // E) No mandatory stop/flip: backward pairwise decel-limit only (do not limit acceleration)
+  //     - limit range to direction-consistent segment
+  //     - start from the smallest |v| in the range to reduce cost
+  //     - enforce: |v_{i-1}| <= sqrt(|v_i|^2 + 2 a_lim ds), with a small floor
+  //     - PRESERVE original closest if both original and new fall below the floor
+  // --------------------------------------------------------------------------
+  const int last_idx = getNewWaypointsSize() - 1;
+
+  int range_end = last_idx;
+  if (sign_now != 0)
   {
-    // ---- No mandatory stop/flip: backward pass (pairwise decel limit only) ----
-    const int last_idx = getNewWaypointsSize() - 1;
-
-    // Limit range to sign boundary
-    int range_end = last_idx;
-    if (sign_now != 0)
-    {
-      for (int i = closest_waypoint + 1; i <= last_idx; ++i)
-      {
-        if (!checkWaypoint(i))
-          return;
-        const double v = updated_waypoints_.waypoints[i].twist.twist.linear.x;
-        const int sv = (v > 0.0) ? 1 : (v < 0.0 ? -1 : 0);
-        if (sv != 0 && sv != sign_now)
-        {
-          range_end = i - 1;
-          break;
-        }
-      }
-    }
-
-    // Choose end_idx as the index with minimum |v| in [closest_waypoint+1, range_end]
-    int end_idx = range_end;
-    if (range_end > closest_waypoint)
-    {
-      int min_idx = closest_waypoint + 1;
-      double min_mag = std::abs(updated_waypoints_.waypoints[min_idx].twist.twist.linear.x);
-      for (int i = min_idx + 1; i <= range_end; ++i)
-      {
-        if (!checkWaypoint(i))
-          return;
-        const double mag = std::abs(updated_waypoints_.waypoints[i].twist.twist.linear.x);
-        if (mag < min_mag)
-        {
-          min_mag = mag;
-          min_idx = i;
-        }
-        if (min_mag < 1e-3)
-          break;  // almost stop, good enough
-      }
-      end_idx = min_idx;
-    }
-
-    const double a_lim = std::abs(velocity_change_limit);
-
-    // Backward pairwise enforcement: only lower earlier speed if needed (do not limit acceleration)
-    for (int i = end_idx; i > closest_waypoint; --i)
-    {
-      if (!checkWaypoint(i) || !checkWaypoint(i - 1))
-        return;
-
-      const double ds = calcInterval(i - 1, i);
-      if (ds <= epsilon)
-        continue;
-
-      const double v_next = updated_waypoints_.waypoints[i].twist.twist.linear.x;
-      const double v_curr = updated_waypoints_.waypoints[i - 1].twist.twist.linear.x;
-
-      if (sign_now != 0)
-      {
-        const int s_next = (v_next > 0.0) ? 1 : (v_next < 0.0 ? -1 : 0);
-        const int s_curr = (v_curr > 0.0) ? 1 : (v_curr < 0.0 ? -1 : 0);
-        if ((s_next != 0 && s_next != sign_now) || (s_curr != 0 && s_curr != sign_now))
-          break;
-      }
-
-      // v_{i-1} <= sqrt( v_i^2 + 2 * a_lim * ds )
-      const double v_allowed_mag = std::sqrt(std::max(0.0, v_next * v_next + 2.0 * a_lim * ds));
-      const double v_curr_mag = std::abs(v_curr);
-
-      if (v_curr_mag > v_allowed_mag)
-      {
-        const int sgn = (v_curr < 0.0) ? -1 : 1;
-        updated_waypoints_.waypoints[i - 1].twist.twist.linear.x = sgn * v_allowed_mag;
-      }
-    }
-
-    // ---- Forward feasibility check from current_vel_: raise only if needed; exit once feasible ----
-
-    const int last_idx2 = getNewWaypointsSize() - 1;
-
-    int end_idx2 = last_idx2;
-    if (sign_now != 0)
-    {
-      for (int k = closest_waypoint + 1; k <= last_idx2; ++k)
-      {
-        if (!checkWaypoint(k))
-          return;
-        const double v = updated_waypoints_.waypoints[k].twist.twist.linear.x;
-        const int sv = (v > 0.0) ? 1 : (v < 0.0 ? -1 : 0);
-        if (sv != 0 && sv != sign_now)
-        {
-          end_idx2 = k - 1;
-          break;
-        }
-      }
-    }
-
-    const double a_lim2 = std::abs(velocity_change_limit);
-    const double v0_mag2 = std::abs(current_vel_);
-    const int sgn0 = (current_vel_ < 0.0) ? -1 : 1;
-
-    double s_acc = 0.0;
-
-    // start from closest_waypoint+1 so we never raise the closest speed
-    for (int i = closest_waypoint + 1; i <= end_idx2; ++i)
+    for (int i = closest_waypoint + 1; i <= last_idx; ++i)
     {
       if (!checkWaypoint(i))
         return;
-      s_acc += calcInterval(i - 1, i);
-
-      // v_min(s) = sqrt(max(0, v0^2 - 2 * a_lim * s))  … minimum reachable speed magnitude under decel limit
-      const double v_min_mag = std::sqrt(std::max(0.0, v0_mag2 * v0_mag2 - 2.0 * a_lim2 * s_acc));
-
-      double& v_tar = updated_waypoints_.waypoints[i].twist.twist.linear.x;
-      const double v_tar_mag = std::abs(v_tar);
-
-      if (sign_now != 0)
+      const double v = updated_waypoints_.waypoints[i].twist.twist.linear.x;
+      const int sv = (v > 0.0) ? 1 : (v < 0.0 ? -1 : 0);
+      if (sv != 0 && sv != sign_now)
       {
-        const int sv = (v_tar > 0.0) ? 1 : (v_tar < 0.0 ? -1 : 0);
-        if (sv != 0 && sv != sign_now)
-          break;
+        range_end = i - 1;
+        break;
       }
+    }
+  }
 
-      if (v_tar_mag + 1e-12 < v_min_mag)
+  int end_idx = range_end;
+  if (range_end > closest_waypoint)
+  {
+    int min_idx = closest_waypoint + 1;
+    double min_mag = std::abs(updated_waypoints_.waypoints[min_idx].twist.twist.linear.x);
+    for (int i = min_idx + 1; i <= range_end; ++i)
+    {
+      if (!checkWaypoint(i))
+        return;
+      const double mag = std::abs(updated_waypoints_.waypoints[i].twist.twist.linear.x);
+      if (mag < min_mag)
       {
-        // Too low → would require over-limit decel; raise up to the minimum reachable speed
-        const int sgn = (v_tar == 0.0) ? sgn0 : (v_tar < 0.0 ? -1 : 1);
-        v_tar = sgn * v_min_mag;
+        min_mag = mag;
+        min_idx = i;
+      }
+      if (min_mag < 1e-3)
+        break;
+    }
+    end_idx = min_idx;
+  }
+
+  const double a_lim = std::abs(velocity_change_limit);
+  const double floor_min = std::max(1e-3, std::min(std::abs(decelerate_vel_min_), 1.0));
+
+  for (int i = end_idx; i > closest_waypoint; --i)
+  {
+    if (!checkWaypoint(i) || !checkWaypoint(i - 1))
+      return;
+
+    const double ds = calcInterval(i - 1, i);
+    if (ds <= epsilon)
+      continue;
+
+    const double v_next = updated_waypoints_.waypoints[i].twist.twist.linear.x;
+    const double v_curr = updated_waypoints_.waypoints[i - 1].twist.twist.linear.x;
+
+    if (sign_now != 0)
+    {
+      const int s_next = (v_next > 0.0) ? 1 : (v_next < 0.0 ? -1 : 0);
+      const int s_curr = (v_curr > 0.0) ? 1 : (v_curr < 0.0 ? -1 : 0);
+      if ((s_next != 0 && s_next != sign_now) || (s_curr != 0 && s_curr != sign_now))
+        break;
+    }
+
+    // allowed magnitude for (i-1) to obey decel limit into i
+    double v_allow = std::sqrt(std::max(0.0, v_next * v_next + 2.0 * a_lim * ds));
+    v_allow = std::max(v_allow, floor_min);  // do not fall to zero when no-stop case
+
+    const double v_curr_mag = std::abs(v_curr);
+    if (v_curr_mag > v_allow)
+    {
+      const int sgn = (v_curr < 0.0) ? -1 : 1;
+
+      // Preservation rule for closest: keep original if both are below the floor
+      if ((i - 1) == closest_waypoint && v_allow < floor_min + 1e-12 && orig_closest_mag <= floor_min + 1e-12)
+      {
+        updated_waypoints_.waypoints[i - 1].twist.twist.linear.x = orig_closest;
       }
       else
       {
-        // From here on, decel within limit is feasible → stop early
+        updated_waypoints_.waypoints[i - 1].twist.twist.linear.x = sgn * v_allow;
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // F) Forward feasibility check from current_vel_ (start at closest+1)
+  //     Raise only if target < reachable-min under decel limit; exit once feasible
+  // --------------------------------------------------------------------------
+  int end_idx2 = last_idx;
+  if (sign_now != 0)
+  {
+    for (int k = closest_waypoint + 1; k <= last_idx; ++k)
+    {
+      if (!checkWaypoint(k))
+        return;
+      const double v = updated_waypoints_.waypoints[k].twist.twist.linear.x;
+      const int sv = (v > 0.0) ? 1 : (v < 0.0 ? -1 : 0);
+      if (sv != 0 && sv != sign_now)
+      {
+        end_idx2 = k - 1;
         break;
       }
+    }
+  }
+
+  const double v0_mag2 = std::abs(current);
+  double s_acc = 0.0;
+  const int sgn0 = (current < 0.0) ? -1 : 1;
+
+  for (int i = closest_waypoint + 1; i <= end_idx2; ++i)
+  {
+    if (!checkWaypoint(i))
+      return;
+    s_acc += calcInterval(i - 1, i);
+
+    double v_min_mag = std::sqrt(std::max(0.0, v0_mag2 * v0_mag2 - 2.0 * a_lim * s_acc));
+    v_min_mag = std::max(v_min_mag, floor_min);  // do not demand over-limit decel
+
+    double& v_tar = updated_waypoints_.waypoints[i].twist.twist.linear.x;
+    const double v_tar_mag = std::abs(v_tar);
+
+    if (sign_now != 0)
+    {
+      const int sv = (v_tar > 0.0) ? 1 : (v_tar < 0.0 ? -1 : 0);
+      if (sv != 0 && sv != sign_now)
+        break;
+    }
+
+    if (v_tar_mag + 1e-12 < v_min_mag)
+    {
+      const int sgn = (v_tar == 0.0) ? sgn0 : (v_tar < 0.0 ? -1 : 1);
+      v_tar = sgn * v_min_mag;  // raise only
+    }
+    else
+    {
+      break;  // feasible decel from here
     }
   }
 }
